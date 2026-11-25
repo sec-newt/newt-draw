@@ -4,16 +4,12 @@ A Newt app made from [newt-android-template](https://github.com/sec-newt/newt-an
 [README.md](README.md), the shared rules in the
 [Newt house style](NEWT_STYLE.md).
 
-While this is still newt-android-template itself, every change here is copied into each
-new Newt app, so keep it small and working, and say in the PR which apps should get the
-same change.
-
 ## Stack
 
 Kotlin, Jetpack Compose, Material 3. The theme and shared pieces come from `newt-ui`, and
 the screenshot and accessibility test helpers (`newtScreenshot()`) from `newt-test`. Both
 live in [newt-android-lib](https://github.com/sec-newt/newt-android-lib). Code is in
-`app/src/main/java/io/github/secnewt/template/`, tests in `app/src/test/`.
+`app/src/main/java/io/github/secnewt/draw/` (`model/` strokes, undo and smoothing; `render/` drawing and saving; `ui/` screens). The plan and each phase's "done" tests are in [PLAN.md](PLAN.md), tests in `app/src/test/`.
 
 ## Checks: run them and show the output
 

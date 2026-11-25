@@ -68,37 +68,42 @@ fun DrawingSurface(
             }
             .pointerInput(brushPx, eraser, smoothingPx) {
                 awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val smoother = StringSmoother(smoothingPx)
-                    live.clear()
-                    live.add(smoother.start(down.position.toPoint()))
-                    finger = down.position
-                    down.consume()
-                    var cancelled = false
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        if (event.changes.count { it.pressed } > 1) cancelled = true
-                        if (cancelled) {
-                            live.clear()
-                            finger = null
-                            event.changes.forEach { it.consume() }
-                            if (event.changes.none { it.pressed }) break else continue
+                    // If the brush changes mid-stroke this is cancelled; finally still wipes
+                    // the half-drawn line so nothing is left on screen that isn't in the drawing.
+                    try {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val smoother = StringSmoother(smoothingPx)
+                        live.clear()
+                        live.add(smoother.start(down.position.toPoint()))
+                        finger = down.position
+                        down.consume()
+                        var cancelled = false
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            if (event.changes.count { it.pressed } > 1) cancelled = true
+                            if (cancelled) {
+                                live.clear()
+                                finger = null
+                                event.changes.forEach { it.consume() }
+                                if (event.changes.none { it.pressed }) break else continue
+                            }
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) break
+                            // Fast swipes deliver several samples per frame; use them all.
+                            change.historical.forEach { sample ->
+                                smoother.move(sample.position.toPoint())?.let(live::add)
+                            }
+                            smoother.move(change.position.toPoint())?.let(live::add)
+                            finger = change.position
+                            change.consume()
                         }
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        if (!change.pressed) break
-                        // Fast swipes deliver several samples per frame; use them all.
-                        change.historical.forEach { sample ->
-                            smoother.move(sample.position.toPoint())?.let(live::add)
+                        if (!cancelled && live.isNotEmpty()) {
+                            currentOnStroke(Stroke(live.toList(), brushPx, eraser))
                         }
-                        smoother.move(change.position.toPoint())?.let(live::add)
-                        finger = change.position
-                        change.consume()
+                    } finally {
+                        live.clear()
+                        finger = null
                     }
-                    if (!cancelled && live.isNotEmpty()) {
-                        currentOnStroke(Stroke(live.toList(), brushPx, eraser))
-                    }
-                    live.clear()
-                    finger = null
                 }
             },
     ) {
@@ -139,8 +144,14 @@ private class InkCache {
         if (appended) {
             val canvas = android.graphics.Canvas(current)
             for (i in drawn.size until strokes.size) StrokePainter.draw(canvas, strokes[i])
+        } else if (current != null && current.width == width && current.height == height) {
+            // Undo and friends: wipe the same image and replay, rather than making a new
+            // full-screen image every time.
+            current.eraseColor(android.graphics.Color.TRANSPARENT)
+            val canvas = android.graphics.Canvas(current)
+            strokes.forEach { StrokePainter.draw(canvas, it) }
         } else {
-            // No recycle(): the screen may still be showing the old image this frame.
+            // New size. No recycle(): the screen may still be showing the old image this frame.
             bitmap = StrokePainter.inkLayer(width, height, strokes)
         }
         drawn = strokes

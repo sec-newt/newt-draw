@@ -91,6 +91,19 @@ class DrawScreenTest {
     }
 
     @Test
+    fun undoAndRedoSayWhatHappened() {
+        show(Drawing())
+        swipeAcross()
+        swipeAcross()
+        composeRule.onNodeWithText("Undo").performClick()
+        composeRule.onNodeWithText("Undone. 1 stroke on the paper.").assertExists()
+        composeRule.onNodeWithText("Undo").performClick()
+        composeRule.onNodeWithText("Undone. The paper is blank.").assertExists()
+        composeRule.onNodeWithText("Redo").performClick()
+        composeRule.onNodeWithText("Redone. 1 stroke on the paper.").assertExists()
+    }
+
+    @Test
     fun undoWithNothingToUndoSaysSo() {
         show(Drawing())
         composeRule.onNodeWithText("Undo").performClick()

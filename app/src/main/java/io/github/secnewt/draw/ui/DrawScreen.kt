@@ -7,7 +7,8 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -25,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -50,6 +52,13 @@ import kotlinx.coroutines.withContext
 private const val HELLO = "One finger draws. A second finger cancels the line."
 
 private enum class Dialog { Size, Smoothing, Clear }
+
+/** Changes with every undo/redo, so TalkBack reads each one out (it skips repeated text). */
+private fun onPage(count: Int) = when (count) {
+    0 -> "The paper is blank."
+    1 -> "1 stroke on the paper."
+    else -> "$count strokes on the paper."
+}
 
 /**
  * The whole app in Phase 1: the paper on top, a status line, then the tools.
@@ -81,22 +90,30 @@ fun DrawScreen(drawing: Drawing) {
             status = "Nothing to save yet. The paper is blank."
             return
         }
-        if (paperSize.width <= 0 || paperSize.height <= 0) return
+        if (paperSize.width <= 0 || paperSize.height <= 0) {
+            status = "Couldn't save: the paper has no room on screen."
+            return
+        }
         saving = true
         status = "Saving…"
         val snapshot = strokes
         val (w, h) = paperSize
         scope.launch {
-            val saved = withContext(Dispatchers.Default) {
-                val picture = StrokePainter.picture(w, h, snapshot)
-                try {
-                    PictureSaver.save(context, picture)
-                } finally {
-                    picture.recycle()
+            try {
+                val saved = withContext(Dispatchers.Default) {
+                    runCatching {
+                        val picture = StrokePainter.picture(w, h, snapshot)
+                        try {
+                            PictureSaver.save(context, picture)
+                        } finally {
+                            picture.recycle()
+                        }
+                    }.getOrNull()
                 }
+                status = if (saved != null) "Saved to Pictures/${PictureSaver.FOLDER}." else "Couldn't save. Is the phone's storage full?"
+            } finally {
+                saving = false
             }
-            status = if (saved != null) "Saved to Pictures/${PictureSaver.FOLDER}." else "Couldn't save. Is the phone's storage full?"
-            saving = false
         }
     }
 
@@ -118,8 +135,14 @@ fun DrawScreen(drawing: Drawing) {
             )
             // The paper is white in light mode too, so a line marks where it ends.
             HorizontalDivider(thickness = 2.dp, color = MaterialTheme.colorScheme.primary)
+            // The tools never take more than half the screen, so the paper always has room.
+            // With very large text they scroll instead.
             Column(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = (LocalConfiguration.current.screenHeightDp / 2).dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
@@ -135,11 +158,11 @@ fun DrawScreen(drawing: Drawing) {
                     itemVerticalAlignment = Alignment.CenterVertically,
                 ) {
                     NewtButton("Undo", onClick = {
-                        status = if (drawing.undo()) HELLO else "Nothing to undo."
+                        status = if (drawing.undo()) "Undone. ${onPage(drawing.strokes.size)}" else "Nothing to undo."
                         refresh()
                     })
                     NewtButton("Redo", onClick = {
-                        status = if (drawing.redo()) HELLO else "Nothing to redo."
+                        status = if (drawing.redo()) "Redone. ${onPage(drawing.strokes.size)}" else "Nothing to redo."
                         refresh()
                     })
                     NewtChoice(
@@ -147,7 +170,7 @@ fun DrawScreen(drawing: Drawing) {
                         selected = tool,
                         label = { it.label },
                         onSelect = { tool = it },
-                        modifier = Modifier.width(196.dp),
+                        modifier = Modifier.widthIn(min = 196.dp),
                     )
                     NewtButton("Size: ${size.label}", onClick = { dialog = Dialog.Size })
                     NewtButton("Smooth: ${smoothing.label}", onClick = { dialog = Dialog.Smoothing })

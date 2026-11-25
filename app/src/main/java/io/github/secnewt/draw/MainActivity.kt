@@ -10,8 +10,9 @@ import io.github.secnewt.ui.NewtTheme
 
 class MainActivity : ComponentActivity() {
     /**
-     * The picture lives as long as the activity. The manifest tells Android not to rebuild
-     * the activity when the phone turns or the theme changes, so those keep the drawing.
+     * The picture lives as long as the activity. The manifest keeps the app upright (strokes
+     * are in screen pixels, so turning would cut part of the drawing off) and tells Android
+     * not to rebuild the activity when the theme or text size changes, so those keep it.
      * (Android closing the app in the background still loses it; autosave is Phase 2.)
      */
     private val drawing = Drawing()

@@ -15,7 +15,8 @@ no internet, no permissions.
   string, so small wobbles never reach the paper. While you draw, a blue ring shows
   where the ink is and a thin blue line shows the string. More smoothing means steadier
   lines, but the ink trails further behind your finger. Medium is the default.
-  Very short strokes may not draw with High; use Low or Off for tiny details.
+  Every line stops a little short of where you lift your finger (further on High),
+  and a very short flick on High comes out as just a dot. Use Low or Off for tiny details.
 - **Pen / Eraser** picks what your finger does. The eraser really removes ink.
 - **Size** sets how thick the pen or eraser is.
 - **Undo / Redo** step back and forward through your strokes. Undo also brings back
@@ -28,9 +29,10 @@ no internet, no permissions.
 
 - Only black ink: colors come in Phase 2.
 - No zoom yet: Phase 2.
-- **Save before you leave the app for long.** Turning the phone or switching dark mode
-  keeps your drawing, but if Android closes the app in the background, the drawing is
-  lost. Autosave comes in Phase 2.
+- The app stays upright; it doesn't turn sideways yet.
+- **Save before you leave the app for long.** Switching dark mode or text size keeps
+  your drawing, but if Android closes the app in the background, the drawing is lost.
+  Autosave comes in Phase 2.
 
 ## Install
 

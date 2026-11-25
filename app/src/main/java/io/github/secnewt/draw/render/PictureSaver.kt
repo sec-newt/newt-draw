@@ -19,8 +19,11 @@ object PictureSaver {
     fun fileName(now: LocalDateTime = LocalDateTime.now()): String =
         "Newt Draw ${now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH-mm-ss"))}.png"
 
-    /** Returns where it was saved, or null if Android refused. */
-    fun save(context: Context, picture: Bitmap, name: String = fileName()): Uri? {
+    /** Returns where it was saved, or null if anything went wrong. Never throws. */
+    fun save(context: Context, picture: Bitmap, name: String = fileName()): Uri? =
+        runCatching { trySave(context, picture, name) }.getOrNull()
+
+    private fun trySave(context: Context, picture: Bitmap, name: String): Uri? {
         val resolver = context.contentResolver
         val details = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
@@ -34,10 +37,15 @@ object PictureSaver {
             resolver.openOutputStream(uri)?.use { picture.compress(Bitmap.CompressFormat.PNG, 100, it) } == true
         }.getOrDefault(false)
         if (!written) {
-            resolver.delete(uri, null, null)
+            runCatching { resolver.delete(uri, null, null) }
             return null
         }
-        resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+        val shown = resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+        if (shown < 1) {
+            // Still hidden from the gallery, so don't claim it was saved.
+            runCatching { resolver.delete(uri, null, null) }
+            return null
+        }
         return uri
     }
 }
