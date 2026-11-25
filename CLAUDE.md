@@ -1,4 +1,4 @@
-# Newt Template
+# Newt Draw
 
 A Newt app made from [newt-android-template](https://github.com/sec-newt/newt-android-template). The owner has low vision; readability beats everything else. What it does is in
 [README.md](README.md), the shared rules in the

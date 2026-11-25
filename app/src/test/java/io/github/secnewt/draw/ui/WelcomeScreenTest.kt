@@ -1,4 +1,4 @@
-package io.github.secnewt.template.ui
+package io.github.secnewt.draw.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -33,7 +33,7 @@ class WelcomeScreenTest {
     fun welcomeDark() {
         composeRule.newtScreenshot("welcome-dark", dark = true) { WelcomeScreen() }
         // The debug build adds " (test)" to the name, so match the start.
-        composeRule.onNodeWithText("Newt Template", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Newt Draw", substring = true).assertIsDisplayed()
     }
 
     @Test

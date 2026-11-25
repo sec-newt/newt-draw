@@ -1,4 +1,4 @@
-# What to look for when reviewing Newt Template
+# What to look for when reviewing Newt Draw
 
 Read [CLAUDE.md](CLAUDE.md) first; flag code that breaks a rule there, and lines in it
 that have gone stale.
