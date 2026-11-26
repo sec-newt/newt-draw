@@ -1,6 +1,12 @@
 package io.github.secnewt.draw.ui
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -15,9 +21,11 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.pinch
 import androidx.compose.ui.test.swipe
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import io.github.secnewt.draw.model.Drawing
+import io.github.secnewt.draw.model.PaperView
 import io.github.secnewt.draw.model.Point
 import io.github.secnewt.draw.model.Stroke
 import io.github.secnewt.test.newtScreenshot
@@ -102,6 +110,50 @@ class DrawScreenTest {
         swipeAcross()
         val zoomed = drawing.lastSpan()
         assertTrue("zoomed in, the same swipe covers less paper ($zoomed vs $whole)", zoomed < whole / 3f)
+    }
+
+    @Test
+    fun movingPinchKeepsItsAnchorAndStopsWhenThePaperResizes() {
+        var paperWidth by mutableStateOf(220.dp)
+        var view by mutableStateOf<PaperView?>(null)
+        composeRule.setContent {
+            DrawingSurface(
+                strokes = emptyList(), brushWidth = 10f, eraser = false, moveOnly = false,
+                smoothingPx = 0f, view = view,
+                onLimits = { view = (view ?: PaperView(0.75f, -100f, -100f)).refitted(it) },
+                onViewChange = { view = it }, onMoveEnd = {},
+                onStroke = { error("A pinch must not draw") },
+                background = Color.White, edge = Color.Black,
+                modifier = Modifier.size(paperWidth, 240.dp),
+            )
+        }
+        val before = composeRule.runOnIdle { checkNotNull(view) }
+        var anchor = Point(0f, 0f)
+        val shift = 30f
+        paper.performTouchInput {
+            anchor = Point(center.x, center.y)
+            down(0, center - Offset(20f, 0f))
+            down(1, center + Offset(20f, 0f))
+            updatePointerTo(0, center + Offset(shift - 40f, 0f))
+            updatePointerTo(1, center + Offset(shift + 40f, 0f))
+            move()
+        }
+        composeRule.runOnIdle {
+            val after = checkNotNull(view)
+            assertEquals(1.5f, after.scale, 0.01f)
+            assertEquals(anchor.x + shift, after.toScreen(before.toPaper(anchor)).x, 0.01f)
+            paperWidth = 200.dp
+        }
+
+        val resized = composeRule.runOnIdle { view }
+        paper.performTouchInput {
+            updatePointerTo(0, center - Offset(40f, 0f))
+            updatePointerTo(1, center + Offset(40f, 0f))
+            move()
+            up(1)
+            up(0)
+        }
+        composeRule.runOnIdle { assertEquals(resized, view) }
     }
 
     @Test

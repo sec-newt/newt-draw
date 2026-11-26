@@ -10,11 +10,13 @@ no internet, no permissions.
 ## Using it
 
 - **Draw** with one finger on the white paper.
-- **Move the paper with two fingers.** The paper is a big square (3000 x 3000), larger
+- **Move and zoom the paper.** The paper is a big square (3000 x 3000), larger
   than the screen. Drag with two fingers to scroll, pinch to zoom in for fine details,
   and tap **Whole page** to see all of it again. Zoomed in, your finger is more precise:
   at 3x, a wobble is a third the size on the paper. A second finger landing cancels the
   line you were drawing, and nothing draws until all fingers are lifted.
+  To drag with one finger without drawing, choose **Move**. Choose **Pen** to draw again.
+  Tap **Zoom in** for a closer view or **Zoom out** to see more of the paper.
 - **Smooth** steadies your line. The ink follows your finger on a short invisible
   string, so small wobbles never reach the paper. While you draw, a blue ring shows
   where the ink is and a thin blue line shows the string. More smoothing means steadier

@@ -67,9 +67,9 @@ data class PaperView(val scale: Float, val offsetX: Float, val offsetY: Float) {
 
         /**
          * At most 2 screen pixels per paper pixel (closer than that, the finished ink would
-         * look soft), and always at least 4x the whole-page view.
+         * look soft), unless the whole-page view already needs a higher scale.
          */
-        val maxScale: Float = max(2f, minScale * 4f)
+        val maxScale: Float = max(2f, minScale)
     }
 
     companion object {

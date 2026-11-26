@@ -54,6 +54,20 @@ class PaperViewTest {
     }
 
     @Test
+    fun wideDrawingAreaStopsAtTwoScreenPixelsPerPaperPixel() {
+        val wide = PaperView.Limits(2400f, 1800f)
+        assertEquals(2f, PaperView.fit(wide).zoomedAtCentre(10f, wide).scale, 0.0001f)
+    }
+
+    @Test
+    fun wholePageStillFitsWhenItNeedsMoreThanTwoScreenPixelsPerPaperPixel() {
+        val huge = PaperView.Limits(9000f, 7500f)
+        val whole = PaperView.fit(huge)
+        assertEquals(2.5f, whole.scale, 0.0001f)
+        assertEquals(whole, whole.zoomedAtCentre(10f, huge))
+    }
+
+    @Test
     fun thePaperCanNeverBeDraggedAway() {
         val zoomed = fit.moved(Point(540f, 750f), 4f, 0f, 0f, limits)
         val flung = zoomed.moved(Point(540f, 750f), 1f, panX = 99999f, panY = 99999f, limits = limits)

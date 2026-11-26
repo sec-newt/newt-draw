@@ -126,6 +126,12 @@ fun DrawingSurface(
                         val moveFingers = if (moveOnly) 1 else 2
                         while (true) {
                             val event = awaitPointerEvent()
+                            // Layout refits the view. Discard this gesture's old transform;
+                            // awaitEachGesture waits for all fingers to lift before restarting.
+                            if (limits !== bounds) {
+                                event.changes.forEach { it.consume() }
+                                return@awaitEachGesture
+                            }
                             val pressed = event.changes.count { it.pressed }
                             if (pressed > 1 && !moving) {
                                 moving = true
@@ -133,7 +139,7 @@ fun DrawingSurface(
                                 finger = null
                             }
                             if (moving) {
-                                val centroid = event.calculateCentroid(useCurrent = true)
+                                val centroid = event.calculateCentroid(useCurrent = false)
                                 if (pressed >= moveFingers && centroid != Offset.Unspecified) {
                                     val pan = event.calculatePan()
                                     shown = shown.moved(centroid.toPoint(), event.calculateZoom(), pan.x, pan.y, bounds)
