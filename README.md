@@ -5,7 +5,7 @@ A finger-friendly sketchpad for Android, part of the Newt family (built from
 It follows the [house style](NEWT_STYLE.md): big worded buttons, high contrast,
 no internet, no permissions.
 
-> **A personal project, in early development.** This is Phase 1 of [the plan](PLAN.md).
+> **A personal project, in early development.** Phase 2 of [the plan](PLAN.md) is under way.
 
 ## Using it
 
@@ -31,15 +31,18 @@ no internet, no permissions.
 - **Save** puts the whole paper in your gallery, in **Pictures/Newt Draw**, as a
   3000 x 3000 PNG with a white background, however far you're zoomed in.
 - **Clear** wipes the paper after asking first.
+- **Your drawing keeps itself.** It's saved inside the app as you draw, and straight
+  away when you leave the app. If Android closes the app, or the phone restarts, your
+  drawing is there when you come back, and Undo still works, even to bring back a
+  cleared page. This copy is private to the app; use **Save** to put a picture in your
+  gallery. Uninstalling the app deletes it.
 
 ## Not yet (on purpose)
 
 - Only black ink: colors and a fill bucket are coming.
 - Shapes (line, circle, oval, square) are coming.
 - The app stays upright; it doesn't turn sideways yet.
-- **Save before you leave the app for long.** Switching dark mode or text size keeps
-  your drawing, but if Android closes the app in the background, the drawing is lost.
-  Autosave comes in Phase 2.
+- One drawing at a time. To start fresh, Save the one you have, then Clear.
 
 ## Install
 

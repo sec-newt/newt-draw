@@ -6,14 +6,30 @@ package io.github.secnewt.draw.model
  *
  * [strokes] is replaced with a new list on every change, so the screen can tell a plain
  * "one stroke added" (draw just that stroke) from anything else (redraw everything).
+ *
+ * The history is the whole drawing: replaying the done actions from blank paper gives
+ * [strokes]. That's what autosave stores (see [History]), so undo still works after the
+ * app is reopened.
  */
 class Drawing {
-    private sealed interface Action {
+    /** Something that was done. Immutable, so a [History] can be saved on another thread. */
+    sealed interface Action {
         class Add(val stroke: Stroke) : Action
-        class Clear(val before: List<Stroke>) : Action
+
+        /** Clearing. [before] is what was on the paper, filled in when the clear happens. */
+        class Clear internal constructor(internal val before: List<Stroke>) : Action {
+            constructor() : this(emptyList())
+        }
     }
 
+    /** Everything needed to rebuild the drawing: what's been done, and what can be redone. */
+    class History(val done: List<Action>, val undone: List<Action>, val version: Long)
+
     var strokes: List<Stroke> = emptyList()
+        private set
+
+    /** Goes up by one with every change, so autosave can tell if there's anything new. */
+    var version: Long = 0
         private set
 
     private val undoStack = ArrayDeque<Action>()
@@ -23,18 +39,17 @@ class Drawing {
     val canRedo: Boolean get() = redoStack.isNotEmpty()
 
     fun add(stroke: Stroke) {
-        apply(Action.Add(stroke))
-        undoStack.addLast(Action.Add(stroke))
+        undoStack.addLast(perform(Action.Add(stroke)))
         redoStack.clear()
+        version++
     }
 
     /** Clears the paper. Can be undone. Does nothing on blank paper. */
     fun clear() {
         if (strokes.isEmpty()) return
-        val action = Action.Clear(strokes)
-        apply(action)
-        undoStack.addLast(action)
+        undoStack.addLast(perform(Action.Clear()))
         redoStack.clear()
+        version++
     }
 
     /** Returns false when there was nothing to undo. */
@@ -45,21 +60,41 @@ class Drawing {
             is Action.Clear -> action.before
         }
         redoStack.addLast(action)
+        version++
         return true
     }
 
     /** Returns false when there was nothing to redo. */
     fun redo(): Boolean {
         val action = redoStack.removeLastOrNull() ?: return false
-        apply(action)
-        undoStack.addLast(action)
+        undoStack.addLast(perform(action))
+        version++
         return true
     }
 
-    private fun apply(action: Action) {
-        strokes = when (action) {
-            is Action.Add -> strokes + action.stroke
-            is Action.Clear -> emptyList()
+    /** A copy of the history that later changes don't affect. Cheap: actions are shared. */
+    fun history() = History(undoStack.toList(), redoStack.toList(), version)
+
+    /** Does [action] and returns it as it should sit on the undo stack. */
+    private fun perform(action: Action): Action = when (action) {
+        is Action.Add -> action.also { strokes = strokes + it.stroke }
+        is Action.Clear -> Action.Clear(strokes).also { strokes = emptyList() }
+    }
+
+    companion object {
+        /** Rebuilds a drawing from a saved [history], with the same undo and redo. */
+        fun from(history: History) = Drawing().apply {
+            // One growing list rather than a new list per stroke: a big drawing loads fast.
+            val paper = ArrayList<Stroke>()
+            history.done.forEach { action ->
+                when (action) {
+                    is Action.Add -> undoStack.addLast(action).also { paper.add(action.stroke) }
+                    is Action.Clear -> undoStack.addLast(Action.Clear(paper.toList())).also { paper.clear() }
+                }
+            }
+            strokes = paper.toList()
+            redoStack.addAll(history.undone)
+            version = history.version
         }
     }
 }

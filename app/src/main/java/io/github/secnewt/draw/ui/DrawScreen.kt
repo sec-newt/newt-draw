@@ -66,17 +66,20 @@ private fun onPage(count: Int) = when (count) {
 
 /**
  * The whole app: the paper on top, a status line, then the tools.
- * [drawing] outlives this screen (it's held by the activity), so turning the phone or
- * switching dark mode doesn't lose the picture.
+ * [drawing] outlives this screen (it's held by the activity), so switching dark mode
+ * doesn't lose the picture.
+ *
+ * @param notice shown in the status line at the start instead of the usual hint.
+ * @param onChange called after every change to [drawing], for autosave.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun DrawScreen(drawing: Drawing) {
+fun DrawScreen(drawing: Drawing, notice: String? = null, onChange: () -> Unit = {}) {
     var strokes by remember { mutableStateOf(drawing.strokes) }
     var tool by rememberSaveable { mutableStateOf(Tool.Pen) }
     var size by rememberSaveable { mutableStateOf(BrushSize.Medium) }
     var smoothing by rememberSaveable { mutableStateOf(Smoothing.Medium) }
-    var status by remember { mutableStateOf(HELLO) }
+    var status by remember { mutableStateOf(notice ?: HELLO) }
     var dialog by remember { mutableStateOf<Dialog?>(null) }
     var limits by remember { mutableStateOf<PaperView.Limits?>(null) }
     var view by remember { mutableStateOf<PaperView?>(null) }
@@ -86,6 +89,7 @@ fun DrawScreen(drawing: Drawing) {
     val scope = rememberCoroutineScope()
 
     fun refresh() {
+        if (strokes !== drawing.strokes) onChange()
         strokes = drawing.strokes
     }
 

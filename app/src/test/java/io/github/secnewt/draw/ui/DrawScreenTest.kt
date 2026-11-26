@@ -293,4 +293,25 @@ class DrawScreenTest {
         composeRule.onNodeWithText("High").performClick()
         composeRule.onNodeWithText("Smooth: High").assertExists()
     }
+
+    @Test
+    fun aNoticeShowsAtTheStart() {
+        composeRule.setContent { NewtTheme { DrawScreen(sketch(), notice = "Welcome back. Your drawing is as you left it.") } }
+        composeRule.onNodeWithText("Welcome back. Your drawing is as you left it.").assertExists()
+        paper.assert(hasStrokes("4 strokes"))
+    }
+
+    @Test
+    fun everyChangeAsksForASaveAndNothingElseDoes() {
+        var changes = 0
+        composeRule.setContent { NewtTheme { DrawScreen(Drawing(), onChange = { changes++ }) } }
+        composeRule.onNodeWithText("Undo").performClick() // nothing to undo
+        composeRule.onNodeWithText("Zoom in").performClick()
+        assertEquals(0, changes)
+        swipeAcross()
+        composeRule.runOnIdle { assertEquals(1, changes) }
+        composeRule.onNodeWithText("Undo").performClick()
+        composeRule.onNodeWithText("Redo").performClick()
+        composeRule.runOnIdle { assertEquals(3, changes) }
+    }
 }
