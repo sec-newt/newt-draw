@@ -16,7 +16,7 @@ feature list at once and never checking each feature. So:
 3. **No dead buttons.** A feature that doesn't work gets cut, not left half-built.
 4. **The scope list is closed.** New ideas go under "Later", not into the current phase.
 
-## Phase 1: Sketchpad (this phase)
+## Phase 1: Sketchpad (done, merged 2026-11-26)
 
 | Feature | Done when |
 |---|---|
@@ -41,7 +41,19 @@ feature list at once and never checking each feature. So:
 drawing isn't kept if Android closes the app in the background. Save before leaving it.
 
 ## Phase 2: Real drawing
-Pinch to zoom and pan, color picker, autosave (drawing survives the app being closed).
+
+Built and merged one step at a time, each its own pull request, in this order:
+
+| Step | Feature | Done when |
+|---|---|---|
+| 2a | **Big paper** (3000 x 3000) you can move: one finger draws, two fingers drag to scroll and pinch to zoom; a "Whole page" button | Zooming keeps the spot between your fingers still (automated); a stroke drawn while zoomed lands in the right place on the paper (automated); Save writes the whole paper |
+| 2b | **Autosave**: the drawing survives Android closing the app | Kill the app in the emulator, reopen, drawing is back |
+| 2c | **Colors** and a **fill bucket** (tap a closed area to fill it) | Fill stays inside lines and doesn't leak through small gaps; colors readable by name for TalkBack |
+| 2d | **Shapes**: line, circle, oval, square, rectangle | Drag to size; the shape is one stroke (undo removes it whole) |
+| 2e | **Save with a transparent background** (option) and **paper shape** choice | The saved PNG is see-through where there's no ink |
+
+Strokes move from screen positions to paper positions in 2a, which also removes the
+reason for portrait-only.
 
 ## Phase 3: Layers
 Add, hide, reorder layers; opacity; save and reopen the project file.

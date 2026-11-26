@@ -1,6 +1,12 @@
 package io.github.secnewt.draw.ui
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -12,10 +18,14 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.pinch
 import androidx.compose.ui.test.swipe
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import io.github.secnewt.draw.model.Drawing
+import io.github.secnewt.draw.model.PaperView
 import io.github.secnewt.draw.model.Point
 import io.github.secnewt.draw.model.Stroke
 import io.github.secnewt.test.newtScreenshot
@@ -43,10 +53,10 @@ class DrawScreenTest {
     private fun sketch() = Drawing().apply {
         fun circle(cx: Float, cy: Float, r: Float, width: Float) =
             Stroke((0..64).map { i -> val a = i / 64.0 * 2 * PI; Point(cx + r * cos(a).toFloat(), cy + r * sin(a).toFloat()) }, width)
-        add(circle(540f, 700f, 300f, 16f))
-        add(circle(430f, 620f, 30f, 16f))
-        add(circle(650f, 620f, 30f, 16f))
-        add(Stroke((0..32).map { i -> val a = i / 32.0 * PI; Point(540f + 160f * cos(a).toFloat(), 800f + 90f * sin(a).toFloat()) }, 16f))
+        add(circle(1500f, 1500f, 900f, 40f))
+        add(circle(1170f, 1260f, 90f, 40f))
+        add(circle(1830f, 1260f, 90f, 40f))
+        add(Stroke((0..32).map { i -> val a = i / 32.0 * PI; Point(1500f + 480f * cos(a).toFloat(), 1800f + 270f * sin(a).toFloat()) }, 40f))
     }
 
     private fun show(drawing: Drawing) = composeRule.setContent { NewtTheme(darkTheme = true) { DrawScreen(drawing) } }
@@ -77,6 +87,128 @@ class DrawScreenTest {
         paper.assert(hasStrokes("1 stroke"))
         assertEquals(1, drawing.strokes.size)
         assertTrue("a long swipe gives the stroke many points", drawing.strokes[0].points.size > 5)
+    }
+
+    /** How much paper, left to right, the same screen swipe covers. */
+    private fun Drawing.lastSpan() = strokes.last().points.let { p -> p.maxOf { it.x } - p.minOf { it.x } }
+
+    private fun pinchOut() = paper.performTouchInput {
+        pinch(
+            start0 = center - Offset(40f, 0f), end0 = center - Offset(400f, 0f),
+            start1 = center + Offset(40f, 0f), end1 = center + Offset(400f, 0f),
+        )
+    }
+
+    @Test
+    fun pinchingZoomsInAndDrawsNothing() {
+        val drawing = Drawing()
+        show(drawing)
+        swipeAcross()
+        val whole = drawing.lastSpan()
+        pinchOut()
+        paper.assert(hasStrokes("1 stroke"))
+        swipeAcross()
+        val zoomed = drawing.lastSpan()
+        assertTrue("zoomed in, the same swipe covers less paper ($zoomed vs $whole)", zoomed < whole / 3f)
+    }
+
+    @Test
+    fun movingPinchKeepsItsAnchorAndStopsWhenThePaperResizes() {
+        var paperWidth by mutableStateOf(220.dp)
+        var view by mutableStateOf<PaperView?>(null)
+        composeRule.setContent {
+            DrawingSurface(
+                strokes = emptyList(), brushWidth = 10f, eraser = false, moveOnly = false,
+                smoothingPx = 0f, view = view,
+                onLimits = { view = (view ?: PaperView(0.75f, -100f, -100f)).refitted(it) },
+                onViewChange = { view = it }, onMoveEnd = {},
+                onStroke = { error("A pinch must not draw") },
+                background = Color.White, edge = Color.Black,
+                modifier = Modifier.size(paperWidth, 240.dp),
+            )
+        }
+        val before = composeRule.runOnIdle { checkNotNull(view) }
+        var anchor = Point(0f, 0f)
+        val shift = 30f
+        paper.performTouchInput {
+            anchor = Point(center.x, center.y)
+            down(0, center - Offset(20f, 0f))
+            down(1, center + Offset(20f, 0f))
+            updatePointerTo(0, center + Offset(shift - 40f, 0f))
+            updatePointerTo(1, center + Offset(shift + 40f, 0f))
+            move()
+        }
+        composeRule.runOnIdle {
+            val after = checkNotNull(view)
+            assertEquals(1.5f, after.scale, 0.01f)
+            assertEquals(anchor.x + shift, after.toScreen(before.toPaper(anchor)).x, 0.01f)
+            paperWidth = 200.dp
+        }
+
+        val resized = composeRule.runOnIdle { view }
+        paper.performTouchInput {
+            updatePointerTo(0, center - Offset(40f, 0f))
+            updatePointerTo(1, center + Offset(40f, 0f))
+            move()
+            up(1)
+            up(0)
+        }
+        composeRule.runOnIdle { assertEquals(resized, view) }
+    }
+
+    @Test
+    fun wholePageGoesBackToTheFullView() {
+        val drawing = Drawing()
+        show(drawing)
+        swipeAcross()
+        val whole = drawing.lastSpan()
+        pinchOut()
+        composeRule.onNodeWithText("Whole page").performClick()
+        swipeAcross()
+        assertEquals(whole, drawing.lastSpan(), whole * 0.05f)
+    }
+
+    @Test
+    fun undoWhileZoomedKeepsTheZoom() {
+        val drawing = Drawing()
+        show(drawing)
+        swipeAcross()
+        val whole = drawing.lastSpan()
+        composeRule.onNodeWithText("Zoom in").performClick()
+        composeRule.onNodeWithText("Zoom 200%.").assertExists()
+        // Undo changes the status text, which changes the paper's height: zoom must stay.
+        composeRule.onNodeWithText("Undo").performClick()
+        swipeAcross()
+        assertEquals(whole / 2f, drawing.lastSpan(), whole * 0.05f)
+    }
+
+    @Test
+    fun theMoveToolDragsWithOneFingerAndDrawsNothing() {
+        val drawing = Drawing()
+        show(drawing)
+        composeRule.onNodeWithText("Zoom in").performClick()
+        composeRule.onNodeWithText("Move").performClick()
+        swipeAcross()
+        paper.assert(hasStrokes("Blank"))
+    }
+
+    @Test
+    fun tappingTheMarginMakesNoStroke() {
+        val drawing = Drawing()
+        show(drawing)
+        // At the whole-page view there is grey margin above the square paper.
+        paper.performTouchInput { click(Offset(width * 0.5f, 5f)) }
+        paper.assert(hasStrokes("Blank"))
+    }
+
+    @Test
+    fun strokesAreStoredInPaperPositions() {
+        val drawing = Drawing()
+        show(drawing)
+        swipeAcross()
+        // A swipe across most of the screen at the whole-page view spans most of the 3000-wide paper.
+        assertTrue(drawing.lastSpan() > 1200f)
+        assertTrue(drawing.strokes.last().points.all { it.x in 0f..3000f && it.y in 0f..3000f })
     }
 
     @Test

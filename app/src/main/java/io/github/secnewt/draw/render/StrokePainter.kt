@@ -75,14 +75,16 @@ object StrokePainter {
         return layer
     }
 
-    /** The finished picture: white paper with the ink on top. This is what gets saved. */
+    /**
+     * The finished picture: white paper with the ink on top. This is what gets saved. On
+     * solid white paper an eraser stroke is the same as painting white, so this needs just
+     * one image (a 3000 x 3000 image is 36 MB).
+     */
     fun picture(width: Int, height: Int, strokes: List<Stroke>): Bitmap {
         val picture = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(picture)
         canvas.drawColor(PAPER)
-        val ink = inkLayer(width, height, strokes)
-        canvas.drawBitmap(ink, 0f, 0f, null)
-        ink.recycle()
+        strokes.forEach { draw(canvas, it, previewOnPaper = true) }
         return picture
     }
 }
