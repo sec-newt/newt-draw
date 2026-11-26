@@ -33,6 +33,13 @@ class StrokePainterTest {
     }
 
     @Test
+    fun savedPictureIsSolidWhiteWhereErased() {
+        val eraser = Stroke((40..60).map { Point(it.toFloat(), 50f) }, width = 20f, eraser = true)
+        val picture = StrokePainter.picture(100, 100, listOf(line, eraser))
+        assertEquals(255, Color.alpha(picture.getPixel(50, 50)))
+    }
+
+    @Test
     fun aTapMakesADot() {
         val dot = Stroke(listOf(Point(50f, 50f)), width = 12f)
         val picture = StrokePainter.picture(100, 100, listOf(dot))

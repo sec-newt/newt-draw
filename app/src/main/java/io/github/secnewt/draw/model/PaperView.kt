@@ -36,6 +36,16 @@ data class PaperView(val scale: Float, val offsetX: Float, val offsetY: Float) {
     }
 
     /**
+     * The screen area changed size (for example the tools grew): keep the same spot and
+     * zoom where possible, just brought back within the new [limits].
+     */
+    fun refitted(limits: Limits) = copy(scale = scale.coerceIn(limits.minScale, limits.maxScale)).keptOnScreen(limits)
+
+    /** Zoom by [zoom] around the middle of the screen (for the Zoom in / Zoom out buttons). */
+    fun zoomedAtCentre(zoom: Float, limits: Limits) =
+        moved(Point(limits.viewWidth / 2f, limits.viewHeight / 2f), zoom, 0f, 0f, limits)
+
+    /**
      * Never lets the paper slide fully away. When it's smaller than the screen it stays
      * centred; when bigger, its edges can't come further in than the screen's edges.
      */
@@ -55,8 +65,11 @@ data class PaperView(val scale: Float, val offsetX: Float, val offsetY: Float) {
         /** Whole page fits on screen. */
         val minScale: Float = min(viewWidth / PAPER_WIDTH, viewHeight / PAPER_HEIGHT)
 
-        /** At most 4 screen pixels per paper pixel, and at least 8x the whole-page view. */
-        val maxScale: Float = max(4f, minScale * 8f)
+        /**
+         * At most 2 screen pixels per paper pixel (closer than that, the finished ink would
+         * look soft), and always at least 4x the whole-page view.
+         */
+        val maxScale: Float = max(2f, minScale * 4f)
     }
 
     companion object {

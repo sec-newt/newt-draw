@@ -14,4 +14,7 @@ enum class BrushSize(val label: String, val width: Float) {
 enum class Tool(val label: String) {
     Pen("Pen"),
     Eraser("Eraser"),
+
+    /** One finger drags the paper, for when two-finger moves are hard. */
+    Move("Move"),
 }

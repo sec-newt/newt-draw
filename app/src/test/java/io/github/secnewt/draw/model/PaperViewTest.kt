@@ -64,6 +64,21 @@ class PaperViewTest {
     }
 
     @Test
+    fun aSizeChangeKeepsTheZoom() {
+        val zoomed = fit.moved(Point(540f, 750f), 3f, 0f, 0f, limits)
+        val taller = PaperView.Limits(1080f, 1560f)
+        assertEquals(zoomed.scale, zoomed.refitted(taller).scale, 0.0001f)
+    }
+
+    @Test
+    fun zoomButtonsZoomAroundTheMiddle() {
+        val middle = Point(540f, 750f)
+        val under = fit.toPaper(middle)
+        val zoomed = fit.zoomedAtCentre(2f, limits)
+        assertNear(middle, zoomed.toScreen(under))
+    }
+
+    @Test
     fun zoomPercentIsRelativeToWholePage() {
         assertEquals(100, fit.percentOf(fit))
         assertEquals(300, fit.moved(Point(0f, 0f), 3f, 0f, 0f, limits).percentOf(fit))

@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.pinch
 import androidx.compose.ui.test.swipe
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -113,6 +114,39 @@ class DrawScreenTest {
         composeRule.onNodeWithText("Whole page").performClick()
         swipeAcross()
         assertEquals(whole, drawing.lastSpan(), whole * 0.05f)
+    }
+
+    @Test
+    fun undoWhileZoomedKeepsTheZoom() {
+        val drawing = Drawing()
+        show(drawing)
+        swipeAcross()
+        val whole = drawing.lastSpan()
+        composeRule.onNodeWithText("Zoom in").performClick()
+        composeRule.onNodeWithText("Zoom 200%.").assertExists()
+        // Undo changes the status text, which changes the paper's height: zoom must stay.
+        composeRule.onNodeWithText("Undo").performClick()
+        swipeAcross()
+        assertEquals(whole / 2f, drawing.lastSpan(), whole * 0.05f)
+    }
+
+    @Test
+    fun theMoveToolDragsWithOneFingerAndDrawsNothing() {
+        val drawing = Drawing()
+        show(drawing)
+        composeRule.onNodeWithText("Zoom in").performClick()
+        composeRule.onNodeWithText("Move").performClick()
+        swipeAcross()
+        paper.assert(hasStrokes("Blank"))
+    }
+
+    @Test
+    fun tappingTheMarginMakesNoStroke() {
+        val drawing = Drawing()
+        show(drawing)
+        // At the whole-page view there is grey margin above the square paper.
+        paper.performTouchInput { click(Offset(width * 0.5f, 5f)) }
+        paper.assert(hasStrokes("Blank"))
     }
 
     @Test

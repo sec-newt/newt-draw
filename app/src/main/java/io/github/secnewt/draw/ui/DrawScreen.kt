@@ -54,6 +54,9 @@ private const val HELLO = "One finger draws. Two fingers drag to scroll and pinc
 
 private enum class Dialog { Size, Smoothing, Clear }
 
+/** "Zoom 300%." — relative to the whole page fitting on screen. */
+private fun zoomText(view: PaperView, limits: PaperView.Limits) = "Zoom ${view.percentOf(PaperView.fit(limits))}%."
+
 /** Changes with every undo/redo, so TalkBack reads each one out (it skips repeated text). */
 private fun onPage(count: Int) = when (count) {
     0 -> "The paper is blank."
@@ -97,17 +100,19 @@ fun DrawScreen(drawing: Drawing) {
         val snapshot = strokes
         scope.launch {
             try {
-                val saved = withContext(Dispatchers.Default) {
-                    runCatching {
+                status = withContext(Dispatchers.Default) {
+                    try {
                         val picture = StrokePainter.picture(PAPER_WIDTH, PAPER_HEIGHT, snapshot)
-                        try {
+                        val saved = try {
                             PictureSaver.save(context, picture)
                         } finally {
                             picture.recycle()
                         }
-                    }.getOrNull()
+                        if (saved != null) "Saved to Pictures/${PictureSaver.FOLDER}." else "Couldn't save. Is the phone's storage full?"
+                    } catch (_: OutOfMemoryError) {
+                        "Couldn't save: the phone ran short of memory. Close other apps and try again."
+                    }
                 }
-                status = if (saved != null) "Saved to Pictures/${PictureSaver.FOLDER}." else "Couldn't save. Is the phone's storage full?"
             } finally {
                 saving = false
             }
@@ -120,14 +125,17 @@ fun DrawScreen(drawing: Drawing) {
                 strokes = strokes,
                 brushWidth = size.width,
                 eraser = tool == Tool.Eraser,
+                moveOnly = tool == Tool.Move,
                 smoothingPx = with(density) { smoothing.radiusDp.dp.toPx() },
                 view = view,
                 onLimits = { new ->
-                    // First layout, or the screen area changed size: show the whole page.
-                    if (new != limits) view = PaperView.fit(new)
+                    // First layout shows the whole page. Later size changes (the status line
+                    // wrapping differently, say) keep the zoom and place you were at.
+                    view = view?.refitted(new) ?: PaperView.fit(new)
                     limits = new
                 },
                 onViewChange = { view = it },
+                onMoveEnd = { view?.let { v -> limits?.let { status = zoomText(v, it) } } },
                 onStroke = {
                     drawing.add(it)
                     refresh()
@@ -179,6 +187,14 @@ fun DrawScreen(drawing: Drawing) {
                     )
                     NewtButton("Size: ${size.label}", onClick = { dialog = Dialog.Size })
                     NewtButton("Smooth: ${smoothing.label}", onClick = { dialog = Dialog.Smoothing })
+                    NewtButton("Zoom in", onClick = {
+                        val l = limits ?: return@NewtButton
+                        view = view?.zoomedAtCentre(2f, l)?.also { status = zoomText(it, l) }
+                    })
+                    NewtButton("Zoom out", onClick = {
+                        val l = limits ?: return@NewtButton
+                        view = view?.zoomedAtCentre(0.5f, l)?.also { status = zoomText(it, l) }
+                    })
                     NewtButton("Whole page", onClick = {
                         limits?.let { view = PaperView.fit(it) }
                         status = "Showing the whole page."

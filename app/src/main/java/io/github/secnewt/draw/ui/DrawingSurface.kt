@@ -19,8 +19,10 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
@@ -46,7 +48,8 @@ private val GuideColor = Color(0xFF3760BF) // Tokyo Night Day blue: 5.8:1 on whi
 /**
  * The paper, which is bigger than the screen. One finger draws. Two fingers drag to scroll
  * and pinch to zoom; a stroke already started is cancelled when the second finger lands,
- * and nothing draws again until every finger is lifted.
+ * and nothing draws again until every finger is lifted. With [moveOnly] (the Move tool),
+ * one finger drags the paper instead of drawing.
  *
  * Strokes are in paper pixels. Finished strokes live in a cached image of the whole paper,
  * so only the stroke being drawn is redrawn as the finger moves.
@@ -61,10 +64,12 @@ fun DrawingSurface(
     strokes: List<Stroke>,
     brushWidth: Float,
     eraser: Boolean,
+    moveOnly: Boolean,
     smoothingPx: Float,
     view: PaperView?,
     onLimits: (PaperView.Limits) -> Unit,
     onViewChange: (PaperView) -> Unit,
+    onMoveEnd: () -> Unit,
     onStroke: (Stroke) -> Unit,
     background: Color,
     edge: Color,
@@ -76,6 +81,7 @@ fun DrawingSurface(
     var limits by remember { mutableStateOf<PaperView.Limits?>(null) }
     val currentOnStroke by rememberUpdatedState(onStroke)
     val currentOnView by rememberUpdatedState(onViewChange)
+    val currentOnMoveEnd by rememberUpdatedState(onMoveEnd)
     val currentView by rememberUpdatedState(view)
     val guideWidth = with(LocalDensity.current) { 2f * density }
     val count = strokes.size
@@ -96,7 +102,7 @@ fun DrawingSurface(
                     else -> "$count strokes"
                 }
             }
-            .pointerInput(brushWidth, eraser, smoothingPx) {
+            .pointerInput(brushWidth, eraser, moveOnly, smoothingPx) {
                 awaitEachGesture {
                     // If the brush changes mid-stroke this is cancelled; finally still wipes
                     // the half-drawn line so nothing is left on screen that isn't in the drawing.
@@ -110,7 +116,14 @@ fun DrawingSurface(
                         live.add(smoother.start(shown.toPaper(down.position.toPoint())))
                         finger = down.position
                         down.consume()
-                        var moving = false
+                        var moving = moveOnly
+                        if (moving) {
+                            live.clear()
+                            finger = null
+                        }
+                        // Fingers needed to move the paper: one with the Move tool, else two.
+                        // Lifting down to fewer stops the move (but nothing draws until all lift).
+                        val moveFingers = if (moveOnly) 1 else 2
                         while (true) {
                             val event = awaitPointerEvent()
                             val pressed = event.changes.count { it.pressed }
@@ -121,13 +134,18 @@ fun DrawingSurface(
                             }
                             if (moving) {
                                 val centroid = event.calculateCentroid(useCurrent = true)
-                                if (pressed > 0 && centroid != Offset.Unspecified) {
+                                if (pressed >= moveFingers && centroid != Offset.Unspecified) {
                                     val pan = event.calculatePan()
                                     shown = shown.moved(centroid.toPoint(), event.calculateZoom(), pan.x, pan.y, bounds)
                                     currentOnView(shown)
                                 }
                                 event.changes.forEach { it.consume() }
-                                if (pressed == 0) break else continue
+                                if (pressed == 0) {
+                                    currentOnMoveEnd()
+                                    break
+                                } else {
+                                    continue
+                                }
                             }
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (!change.pressed) break
@@ -139,7 +157,8 @@ fun DrawingSurface(
                             finger = change.position
                             change.consume()
                         }
-                        if (!moving && live.isNotEmpty()) {
+                        // A tap or line entirely on the grey margin would be an invisible stroke.
+                        if (!moving && live.isNotEmpty() && live.any { it.onPaper(brushWidth) }) {
                             currentOnStroke(Stroke(live.toList(), brushWidth, eraser))
                         }
                     } finally {
@@ -155,9 +174,12 @@ fun DrawingSurface(
         translate(v.offsetX, v.offsetY) {
             scale(v.scale, v.scale, pivot = Offset.Zero) {
                 drawRect(Color(PAPER), size = Size(PAPER_WIDTH.toFloat(), PAPER_HEIGHT.toFloat()))
-                drawImage(ink.asImageBitmap())
+                drawImage(ink.asImageBitmap(), filterQuality = FilterQuality.High)
                 if (live.isNotEmpty()) {
-                    drawIntoCanvas { StrokePainter.drawPreview(it.nativeCanvas, Stroke(live.toList(), brushWidth, eraser)) }
+                    // Ink only shows on the paper, never on the margin around it.
+                    clipRect(0f, 0f, PAPER_WIDTH.toFloat(), PAPER_HEIGHT.toFloat()) {
+                        drawIntoCanvas { StrokePainter.drawPreview(it.nativeCanvas, Stroke(live.toList(), brushWidth, eraser)) }
+                    }
                 }
             }
         }
@@ -179,6 +201,12 @@ fun DrawingSurface(
 
 private fun Offset.toPoint() = Point(x, y)
 
+/** True if a brush of [width] at this point would touch the paper. */
+private fun Point.onPaper(width: Float): Boolean {
+    val r = width / 2f
+    return x >= -r && y >= -r && x <= PAPER_WIDTH + r && y <= PAPER_HEIGHT + r
+}
+
 /**
  * Keeps the whole-paper ink image between frames. When the only change is new strokes added
  * on the end, it draws just those; anything else (undo, redo of a clear) wipes the same image
@@ -190,6 +218,8 @@ private class InkCache {
 
     fun layer(strokes: List<Stroke>): Bitmap {
         val current = bitmap ?: StrokePainter.inkLayer(PAPER_WIDTH, PAPER_HEIGHT, emptyList()).also {
+            // Smaller copies for the zoomed-out view, so thin lines don't break up.
+            it.setHasMipMap(true)
             bitmap = it
             drawn = emptyList()
         }
