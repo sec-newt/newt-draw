@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.pinch
 import androidx.compose.ui.test.swipe
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
@@ -43,10 +44,10 @@ class DrawScreenTest {
     private fun sketch() = Drawing().apply {
         fun circle(cx: Float, cy: Float, r: Float, width: Float) =
             Stroke((0..64).map { i -> val a = i / 64.0 * 2 * PI; Point(cx + r * cos(a).toFloat(), cy + r * sin(a).toFloat()) }, width)
-        add(circle(540f, 700f, 300f, 16f))
-        add(circle(430f, 620f, 30f, 16f))
-        add(circle(650f, 620f, 30f, 16f))
-        add(Stroke((0..32).map { i -> val a = i / 32.0 * PI; Point(540f + 160f * cos(a).toFloat(), 800f + 90f * sin(a).toFloat()) }, 16f))
+        add(circle(1500f, 1500f, 900f, 40f))
+        add(circle(1170f, 1260f, 90f, 40f))
+        add(circle(1830f, 1260f, 90f, 40f))
+        add(Stroke((0..32).map { i -> val a = i / 32.0 * PI; Point(1500f + 480f * cos(a).toFloat(), 1800f + 270f * sin(a).toFloat()) }, 40f))
     }
 
     private fun show(drawing: Drawing) = composeRule.setContent { NewtTheme(darkTheme = true) { DrawScreen(drawing) } }
@@ -77,6 +78,51 @@ class DrawScreenTest {
         paper.assert(hasStrokes("1 stroke"))
         assertEquals(1, drawing.strokes.size)
         assertTrue("a long swipe gives the stroke many points", drawing.strokes[0].points.size > 5)
+    }
+
+    /** How much paper, left to right, the same screen swipe covers. */
+    private fun Drawing.lastSpan() = strokes.last().points.let { p -> p.maxOf { it.x } - p.minOf { it.x } }
+
+    private fun pinchOut() = paper.performTouchInput {
+        pinch(
+            start0 = center - Offset(40f, 0f), end0 = center - Offset(400f, 0f),
+            start1 = center + Offset(40f, 0f), end1 = center + Offset(400f, 0f),
+        )
+    }
+
+    @Test
+    fun pinchingZoomsInAndDrawsNothing() {
+        val drawing = Drawing()
+        show(drawing)
+        swipeAcross()
+        val whole = drawing.lastSpan()
+        pinchOut()
+        paper.assert(hasStrokes("1 stroke"))
+        swipeAcross()
+        val zoomed = drawing.lastSpan()
+        assertTrue("zoomed in, the same swipe covers less paper ($zoomed vs $whole)", zoomed < whole / 3f)
+    }
+
+    @Test
+    fun wholePageGoesBackToTheFullView() {
+        val drawing = Drawing()
+        show(drawing)
+        swipeAcross()
+        val whole = drawing.lastSpan()
+        pinchOut()
+        composeRule.onNodeWithText("Whole page").performClick()
+        swipeAcross()
+        assertEquals(whole, drawing.lastSpan(), whole * 0.05f)
+    }
+
+    @Test
+    fun strokesAreStoredInPaperPositions() {
+        val drawing = Drawing()
+        show(drawing)
+        swipeAcross()
+        // A swipe across most of the screen at the whole-page view spans most of the 3000-wide paper.
+        assertTrue(drawing.lastSpan() > 1200f)
+        assertTrue(drawing.strokes.last().points.all { it.x in 0f..3000f && it.y in 0f..3000f })
     }
 
     @Test

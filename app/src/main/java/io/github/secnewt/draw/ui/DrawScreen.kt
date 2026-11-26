@@ -25,17 +25,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import io.github.secnewt.draw.model.BrushSize
 import io.github.secnewt.draw.model.Drawing
+import io.github.secnewt.draw.model.PAPER_HEIGHT
+import io.github.secnewt.draw.model.PAPER_WIDTH
+import io.github.secnewt.draw.model.PaperView
 import io.github.secnewt.draw.model.Smoothing
 import io.github.secnewt.draw.model.Tool
 import io.github.secnewt.draw.render.PictureSaver
@@ -49,7 +50,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val HELLO = "One finger draws. A second finger cancels the line."
+private const val HELLO = "One finger draws. Two fingers drag to scroll and pinch to zoom."
 
 private enum class Dialog { Size, Smoothing, Clear }
 
@@ -61,7 +62,7 @@ private fun onPage(count: Int) = when (count) {
 }
 
 /**
- * The whole app in Phase 1: the paper on top, a status line, then the tools.
+ * The whole app: the paper on top, a status line, then the tools.
  * [drawing] outlives this screen (it's held by the activity), so turning the phone or
  * switching dark mode doesn't lose the picture.
  */
@@ -74,7 +75,8 @@ fun DrawScreen(drawing: Drawing) {
     var smoothing by rememberSaveable { mutableStateOf(Smoothing.Medium) }
     var status by remember { mutableStateOf(HELLO) }
     var dialog by remember { mutableStateOf<Dialog?>(null) }
-    var paperSize by remember { mutableStateOf(IntSize.Zero) }
+    var limits by remember { mutableStateOf<PaperView.Limits?>(null) }
+    var view by remember { mutableStateOf<PaperView?>(null) }
     var saving by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val context = LocalContext.current
@@ -90,19 +92,14 @@ fun DrawScreen(drawing: Drawing) {
             status = "Nothing to save yet. The paper is blank."
             return
         }
-        if (paperSize.width <= 0 || paperSize.height <= 0) {
-            status = "Couldn't save: the paper has no room on screen."
-            return
-        }
         saving = true
         status = "Saving…"
         val snapshot = strokes
-        val (w, h) = paperSize
         scope.launch {
             try {
                 val saved = withContext(Dispatchers.Default) {
                     runCatching {
-                        val picture = StrokePainter.picture(w, h, snapshot)
+                        val picture = StrokePainter.picture(PAPER_WIDTH, PAPER_HEIGHT, snapshot)
                         try {
                             PictureSaver.save(context, picture)
                         } finally {
@@ -121,17 +118,25 @@ fun DrawScreen(drawing: Drawing) {
         Column(Modifier.fillMaxSize().padding(padding)) {
             DrawingSurface(
                 strokes = strokes,
-                brushPx = with(density) { size.widthDp.dp.toPx() },
+                brushWidth = size.width,
                 eraser = tool == Tool.Eraser,
                 smoothingPx = with(density) { smoothing.radiusDp.dp.toPx() },
+                view = view,
+                onLimits = { new ->
+                    // First layout, or the screen area changed size: show the whole page.
+                    if (new != limits) view = PaperView.fit(new)
+                    limits = new
+                },
+                onViewChange = { view = it },
                 onStroke = {
                     drawing.add(it)
                     refresh()
                 },
+                background = MaterialTheme.colorScheme.surfaceVariant,
+                edge = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .onSizeChanged { paperSize = it },
+                    .fillMaxWidth(),
             )
             // The paper is white in light mode too, so a line marks where it ends.
             HorizontalDivider(thickness = 2.dp, color = MaterialTheme.colorScheme.primary)
@@ -174,6 +179,10 @@ fun DrawScreen(drawing: Drawing) {
                     )
                     NewtButton("Size: ${size.label}", onClick = { dialog = Dialog.Size })
                     NewtButton("Smooth: ${smoothing.label}", onClick = { dialog = Dialog.Smoothing })
+                    NewtButton("Whole page", onClick = {
+                        limits?.let { view = PaperView.fit(it) }
+                        status = "Showing the whole page."
+                    })
                     NewtButton("Save", onClick = ::save)
                     NewtButton("Clear", onClick = {
                         if (strokes.isEmpty()) status = "The paper is already blank." else dialog = Dialog.Clear

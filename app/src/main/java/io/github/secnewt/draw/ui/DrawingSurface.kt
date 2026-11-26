@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -12,17 +15,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import io.github.secnewt.draw.model.PAPER_HEIGHT
+import io.github.secnewt.draw.model.PAPER_WIDTH
+import io.github.secnewt.draw.model.PaperView
 import io.github.secnewt.draw.model.Point
 import io.github.secnewt.draw.model.Stroke
 import io.github.secnewt.draw.model.StringSmoother
@@ -33,31 +44,50 @@ import io.github.secnewt.draw.render.StrokePainter
 private val GuideColor = Color(0xFF3760BF) // Tokyo Night Day blue: 5.8:1 on white paper
 
 /**
- * The paper. One finger draws; a second finger cancels the stroke so a resting finger or
- * palm doesn't leave a stray line. Finished strokes live in a cached image, so only the
- * stroke being drawn is redrawn as the finger moves.
+ * The paper, which is bigger than the screen. One finger draws. Two fingers drag to scroll
+ * and pinch to zoom; a stroke already started is cancelled when the second finger lands,
+ * and nothing draws again until every finger is lifted.
  *
- * @param smoothingPx string length in pixels; 0 means no smoothing.
- * @param brushPx brush width in pixels.
+ * Strokes are in paper pixels. Finished strokes live in a cached image of the whole paper,
+ * so only the stroke being drawn is redrawn as the finger moves.
+ *
+ * @param view where the paper sits on screen; null until the first layout, when
+ *   [onLimits] reports the screen area and the caller fits the whole page.
+ * @param smoothingPx string length in screen pixels (it's about the finger, not the paper).
+ * @param edge the outline around the paper, so its edge shows against any background.
  */
 @Composable
 fun DrawingSurface(
     strokes: List<Stroke>,
-    brushPx: Float,
+    brushWidth: Float,
     eraser: Boolean,
     smoothingPx: Float,
+    view: PaperView?,
+    onLimits: (PaperView.Limits) -> Unit,
+    onViewChange: (PaperView) -> Unit,
     onStroke: (Stroke) -> Unit,
+    background: Color,
+    edge: Color,
     modifier: Modifier = Modifier,
 ) {
     val cache = remember { InkCache() }
     val live = remember { mutableStateListOf<Point>() }
     var finger by remember { mutableStateOf<Offset?>(null) }
+    var limits by remember { mutableStateOf<PaperView.Limits?>(null) }
     val currentOnStroke by rememberUpdatedState(onStroke)
+    val currentOnView by rememberUpdatedState(onViewChange)
+    val currentView by rememberUpdatedState(view)
     val guideWidth = with(LocalDensity.current) { 2f * density }
     val count = strokes.size
 
     Canvas(
         modifier
+            .clipToBounds()
+            .onSizeChanged {
+                val new = PaperView.Limits(it.width.toFloat(), it.height.toFloat())
+                limits = new
+                onLimits(new)
+            }
             .semantics {
                 contentDescription = "Drawing paper"
                 stateDescription = when (count) {
@@ -66,39 +96,51 @@ fun DrawingSurface(
                     else -> "$count strokes"
                 }
             }
-            .pointerInput(brushPx, eraser, smoothingPx) {
+            .pointerInput(brushWidth, eraser, smoothingPx) {
                 awaitEachGesture {
                     // If the brush changes mid-stroke this is cancelled; finally still wipes
                     // the half-drawn line so nothing is left on screen that isn't in the drawing.
                     try {
                         val down = awaitFirstDown(requireUnconsumed = false)
-                        val smoother = StringSmoother(smoothingPx)
+                        var shown = currentView ?: return@awaitEachGesture
+                        val bounds = limits ?: return@awaitEachGesture
+                        // The string is a set length on screen, so it's shorter on the paper when zoomed in.
+                        val smoother = StringSmoother(smoothingPx / shown.scale)
                         live.clear()
-                        live.add(smoother.start(down.position.toPoint()))
+                        live.add(smoother.start(shown.toPaper(down.position.toPoint())))
                         finger = down.position
                         down.consume()
-                        var cancelled = false
+                        var moving = false
                         while (true) {
                             val event = awaitPointerEvent()
-                            if (event.changes.count { it.pressed } > 1) cancelled = true
-                            if (cancelled) {
+                            val pressed = event.changes.count { it.pressed }
+                            if (pressed > 1 && !moving) {
+                                moving = true
                                 live.clear()
                                 finger = null
+                            }
+                            if (moving) {
+                                val centroid = event.calculateCentroid(useCurrent = true)
+                                if (pressed > 0 && centroid != Offset.Unspecified) {
+                                    val pan = event.calculatePan()
+                                    shown = shown.moved(centroid.toPoint(), event.calculateZoom(), pan.x, pan.y, bounds)
+                                    currentOnView(shown)
+                                }
                                 event.changes.forEach { it.consume() }
-                                if (event.changes.none { it.pressed }) break else continue
+                                if (pressed == 0) break else continue
                             }
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (!change.pressed) break
                             // Fast swipes deliver several samples per frame; use them all.
                             change.historical.forEach { sample ->
-                                smoother.move(sample.position.toPoint())?.let(live::add)
+                                smoother.move(shown.toPaper(sample.position.toPoint()))?.let(live::add)
                             }
-                            smoother.move(change.position.toPoint())?.let(live::add)
+                            smoother.move(shown.toPaper(change.position.toPoint()))?.let(live::add)
                             finger = change.position
                             change.consume()
                         }
-                        if (!cancelled && live.isNotEmpty()) {
-                            currentOnStroke(Stroke(live.toList(), brushPx, eraser))
+                        if (!moving && live.isNotEmpty()) {
+                            currentOnStroke(Stroke(live.toList(), brushWidth, eraser))
                         }
                     } finally {
                         live.clear()
@@ -107,18 +149,30 @@ fun DrawingSurface(
                 }
             },
     ) {
-        drawRect(Color(PAPER))
-        val ink = cache.layer(size.width.toInt(), size.height.toInt(), strokes)
-        if (ink != null) drawImage(ink.asImageBitmap())
-        if (live.isNotEmpty()) {
-            drawIntoCanvas { StrokePainter.drawPreview(it.nativeCanvas, Stroke(live.toList(), brushPx, eraser)) }
+        drawRect(background)
+        val v = view ?: return@Canvas
+        val ink = cache.layer(strokes)
+        translate(v.offsetX, v.offsetY) {
+            scale(v.scale, v.scale, pivot = Offset.Zero) {
+                drawRect(Color(PAPER), size = Size(PAPER_WIDTH.toFloat(), PAPER_HEIGHT.toFloat()))
+                drawImage(ink.asImageBitmap())
+                if (live.isNotEmpty()) {
+                    drawIntoCanvas { StrokePainter.drawPreview(it.nativeCanvas, Stroke(live.toList(), brushWidth, eraser)) }
+                }
+            }
         }
+        drawRect(
+            edge,
+            topLeft = Offset(v.offsetX, v.offsetY),
+            size = Size(PAPER_WIDTH * v.scale, PAPER_HEIGHT * v.scale),
+            style = DrawStroke(guideWidth),
+        )
         val ring = live.lastOrNull()
         val touch = finger
         if (smoothingPx > 0f && ring != null && touch != null) {
-            val center = Offset(ring.x, ring.y)
+            val center = v.toScreen(ring).let { Offset(it.x, it.y) }
             drawLine(GuideColor, center, touch, strokeWidth = guideWidth)
-            drawCircle(GuideColor, radius = brushPx / 2f + guideWidth * 2f, center = center, style = DrawStroke(guideWidth))
+            drawCircle(GuideColor, radius = brushWidth * v.scale / 2f + guideWidth * 2f, center = center, style = DrawStroke(guideWidth))
         }
     }
 }
@@ -126,35 +180,28 @@ fun DrawingSurface(
 private fun Offset.toPoint() = Point(x, y)
 
 /**
- * Keeps the ink layer between frames. When the only change is new strokes added on the end,
- * it draws just those; anything else (undo, redo of a clear, a new size) rebuilds it by
- * replaying every stroke.
+ * Keeps the whole-paper ink image between frames. When the only change is new strokes added
+ * on the end, it draws just those; anything else (undo, redo of a clear) wipes the same image
+ * and replays every stroke.
  */
 private class InkCache {
     private var bitmap: Bitmap? = null
     private var drawn: List<Stroke> = emptyList()
 
-    fun layer(width: Int, height: Int, strokes: List<Stroke>): Bitmap? {
-        if (width <= 0 || height <= 0) return null
-        val current = bitmap
-        val appended = current != null &&
-            current.width == width && current.height == height &&
-            strokes.size >= drawn.size &&
-            (drawn.isEmpty() || strokes[drawn.size - 1] === drawn.last())
+    fun layer(strokes: List<Stroke>): Bitmap {
+        val current = bitmap ?: StrokePainter.inkLayer(PAPER_WIDTH, PAPER_HEIGHT, emptyList()).also {
+            bitmap = it
+            drawn = emptyList()
+        }
+        val appended = strokes.size >= drawn.size && (drawn.isEmpty() || strokes[drawn.size - 1] === drawn.last())
+        val canvas = android.graphics.Canvas(current)
         if (appended) {
-            val canvas = android.graphics.Canvas(current)
             for (i in drawn.size until strokes.size) StrokePainter.draw(canvas, strokes[i])
-        } else if (current != null && current.width == width && current.height == height) {
-            // Undo and friends: wipe the same image and replay, rather than making a new
-            // full-screen image every time.
-            current.eraseColor(android.graphics.Color.TRANSPARENT)
-            val canvas = android.graphics.Canvas(current)
-            strokes.forEach { StrokePainter.draw(canvas, it) }
         } else {
-            // New size. No recycle(): the screen may still be showing the old image this frame.
-            bitmap = StrokePainter.inkLayer(width, height, strokes)
+            current.eraseColor(android.graphics.Color.TRANSPARENT)
+            strokes.forEach { StrokePainter.draw(canvas, it) }
         }
         drawn = strokes
-        return bitmap
+        return current
     }
 }
