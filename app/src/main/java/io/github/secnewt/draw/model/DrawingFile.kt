@@ -74,13 +74,19 @@ object DrawingFile {
                     val width = data.readFloat()
                     if (!width.isFinite() || width <= 0f) throw IOException("Bad brush width $width")
                     val eraser = data.readBoolean()
-                    val points = List(readCount(data, allowZero = false)) { Point(data.readFloat(), data.readFloat()) }
+                    val points = List(readCount(data, allowZero = false)) { Point(readCoordinate(data), readCoordinate(data)) }
                     Drawing.Action.Add(Stroke(points, width, eraser))
                 }
                 CLEAR -> Drawing.Action.Clear()
                 else -> throw IOException("Unknown action $type")
             }
         }
+    }
+
+    private fun readCoordinate(data: DataInputStream): Float {
+        val value = data.readFloat()
+        if (!value.isFinite()) throw IOException("Bad position $value")
+        return value
     }
 
     private fun readCount(data: DataInputStream, allowZero: Boolean): Int {

@@ -31,10 +31,11 @@ no internet, no permissions.
 - **Save** puts the whole paper in your gallery, in **Pictures/Newt Draw**, as a
   3000 x 3000 PNG with a white background, however far you're zoomed in.
 - **Clear** wipes the paper after asking first.
-- **Your drawing keeps itself.** It's saved inside the app as you draw, and straight
-  away when you leave the app. If Android closes the app, or the phone restarts, your
-  drawing is there when you come back, and Undo still works, even to bring back a
-  cleared page. This copy is private to the app; use **Save** to put a picture in your
+- **Your drawing keeps itself.** It's saved inside the app a moment (1.5 seconds) after
+  you stop drawing, and straight away when you leave the app. If Android closes the app
+  in the background, or the phone restarts, your drawing is there when you come back,
+  and Undo still works, even to bring back a cleared page. If the app crashes or the
+  phone dies while you're drawing, the last second or two of lines can be lost. This copy is private to the app; use **Save** to put a picture in your
   gallery. Uninstalling the app deletes it.
 
 ## Not yet (on purpose)

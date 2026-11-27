@@ -1,6 +1,7 @@
 package io.github.secnewt.draw.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -17,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +54,9 @@ import kotlinx.coroutines.withContext
 
 private const val HELLO = "One finger draws. Two fingers drag to scroll and pinch to zoom."
 
+/** A message for the status line. Each new one is shown, even if the words are the same. */
+class StatusAlert(val text: String)
+
 private enum class Dialog { Size, Smoothing, Clear }
 
 /** "Zoom 300%." — relative to the whole page fitting on screen. */
@@ -70,11 +75,17 @@ private fun onPage(count: Int) = when (count) {
  * doesn't lose the picture.
  *
  * @param notice shown in the status line at the start instead of the usual hint.
+ * @param alert shown in the status line each time a new one arrives (autosave problems).
  * @param onChange called after every change to [drawing], for autosave.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun DrawScreen(drawing: Drawing, notice: String? = null, onChange: () -> Unit = {}) {
+fun DrawScreen(
+    drawing: Drawing,
+    notice: String? = null,
+    alert: StatusAlert? = null,
+    onChange: () -> Unit = {},
+) {
     var strokes by remember { mutableStateOf(drawing.strokes) }
     var tool by rememberSaveable { mutableStateOf(Tool.Pen) }
     var size by rememberSaveable { mutableStateOf(BrushSize.Medium) }
@@ -87,6 +98,7 @@ fun DrawScreen(drawing: Drawing, notice: String? = null, onChange: () -> Unit = 
     val density = LocalDensity.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    LaunchedEffect(alert) { alert?.let { status = it.text } }
 
     fun refresh() {
         if (strokes !== drawing.strokes) onChange()
@@ -269,4 +281,18 @@ private fun <T> ChoiceDialog(
         },
         confirmButton = { NewtButton("Close", onClick = onDismiss) },
     )
+}
+
+/** Shown for the moment it takes to open the saved drawing. */
+@Composable
+fun OpeningScreen() {
+    Scaffold { padding ->
+        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            Text(
+                "Opening your drawing…",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
 }

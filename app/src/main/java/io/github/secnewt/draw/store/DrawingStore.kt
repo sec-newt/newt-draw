@@ -11,24 +11,32 @@ import java.io.IOException
  * closing the app. No permission is needed and no other app can read it.
  *
  * Saving writes a new file and then swaps it in, so a crash halfway through a save leaves
- * the last good save in place. A file that can't be read is moved aside, never overwritten,
- * so a bug in loading can't silently cost a drawing.
+ * the last good save in place. A file that can't be read is moved aside under its own name,
+ * never overwritten, so a bug in loading can't silently cost a drawing. If it can't even be
+ * moved aside, saving stops rather than write over it.
  */
-class DrawingStore(dir: File) {
+class DrawingStore(private val dir: File, private val clock: () -> Long = System::currentTimeMillis) {
     private val file = File(dir, "drawing.ndrw")
     private val temp = File(dir, "drawing.ndrw.new")
-    private val damaged = File(dir, "drawing.ndrw.damaged")
 
     /** Version of the last save, so saving an unchanged drawing does nothing. */
     @Volatile
     private var savedVersion = -1L
 
+    /** Set when a damaged file couldn't be moved aside: saving would overwrite it. */
+    @Volatile
+    private var blocked = false
+
     sealed interface Loaded {
         /** First run, or the last save was of blank paper with no history. */
         data object Nothing : Loaded
         class Found(val drawing: Drawing) : Loaded
-        /** The file couldn't be read. It's been kept as drawing.ndrw.damaged. */
-        data object Damaged : Loaded
+
+        /**
+         * The file couldn't be read. [keptAs] is the name it was moved to; null if even
+         * that failed, in which case it's left where it was and autosave is off.
+         */
+        class Damaged(val keptAs: String?) : Loaded
     }
 
     fun load(): Loaded {
@@ -38,21 +46,21 @@ class DrawingStore(dir: File) {
             savedVersion = history.version
             Loaded.Found(Drawing.from(history))
         } catch (e: IOException) {
-            moveAside()
-            Loaded.Damaged
+            Loaded.Damaged(moveAside())
         } catch (e: IllegalArgumentException) {
-            moveAside()
-            Loaded.Damaged
+            Loaded.Damaged(moveAside())
         }
     }
 
     /**
      * Saves [history] unless it's already saved. Safe to call from any thread; saves never
      * overlap, and an older history never replaces a newer one.
-     * Returns false if the save failed (the previous save is still there).
+     * Returns false if the save failed (the previous save is still there, and the next
+     * call tries again).
      */
     @Synchronized
     fun save(history: Drawing.History): Boolean {
+        if (blocked) return false
         if (history.version <= savedVersion) return true
         return try {
             FileOutputStream(temp).use { out ->
@@ -68,8 +76,17 @@ class DrawingStore(dir: File) {
         }
     }
 
-    private fun moveAside() {
-        damaged.delete()
-        file.renameTo(damaged)
+    /** Moves the unreadable file to a name of its own. Returns that name, or null if it couldn't. */
+    private fun moveAside(): String? {
+        val stamp = clock()
+        val target = generateSequence(0) { it + 1 }
+            .map { n -> File(dir, if (n == 0) "drawing-damaged-$stamp.ndrw" else "drawing-damaged-$stamp-$n.ndrw") }
+            .first { !it.exists() }
+        return if (file.renameTo(target)) {
+            target.name
+        } else {
+            blocked = true
+            null
+        }
     }
 }

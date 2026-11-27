@@ -8,6 +8,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -112,10 +113,54 @@ class DrawingStoreTest {
         val file = File(folder.root, "drawing.ndrw")
         val garbage = "not a drawing".toByteArray()
         file.writeBytes(garbage)
-        val store = DrawingStore(folder.root)
-        assertSame(DrawingStore.Loaded.Damaged, store.load())
-        store.save(Drawing().apply { add(line(100f)) }.history())
-        assertArrayEquals(garbage, File(folder.root, "drawing.ndrw.damaged").readBytes())
+        val store = DrawingStore(folder.root, clock = { 1234L })
+        val loaded = store.load()
+        assertTrue(loaded is DrawingStore.Loaded.Damaged)
+        assertEquals("drawing-damaged-1234.ndrw", (loaded as DrawingStore.Loaded.Damaged).keptAs)
+        assertTrue(store.save(Drawing().apply { add(line(100f)) }.history()))
+        assertArrayEquals(garbage, File(folder.root, "drawing-damaged-1234.ndrw").readBytes())
+    }
+
+    @Test
+    fun everyDamagedFileIsKept() {
+        val file = File(folder.root, "drawing.ndrw")
+        file.writeBytes(byteArrayOf(1))
+        DrawingStore(folder.root, clock = { 1234L }).load()
+        file.writeBytes(byteArrayOf(2))
+        DrawingStore(folder.root, clock = { 1234L }).load() // same moment: still its own name
+        assertArrayEquals(byteArrayOf(1), File(folder.root, "drawing-damaged-1234.ndrw").readBytes())
+        assertArrayEquals(byteArrayOf(2), File(folder.root, "drawing-damaged-1234-1.ndrw").readBytes())
+    }
+
+    @Test
+    fun aDamagedFileThatCantBeMovedIsNeverSavedOver() {
+        val file = File(folder.root, "drawing.ndrw")
+        file.writeBytes(byteArrayOf(9, 9, 9))
+        folder.root.setWritable(false)
+        try {
+            assumeTrue("needs a folder that can be made read-only", !folder.root.canWrite())
+            val store = DrawingStore(folder.root)
+            val loaded = store.load() as DrawingStore.Loaded.Damaged
+            assertEquals(null, loaded.keptAs)
+            folder.root.setWritable(true)
+            // Even once the folder is writable again, this run never saves over the file.
+            assertEquals(false, store.save(Drawing().apply { add(line(100f)) }.history()))
+            assertArrayEquals(byteArrayOf(9, 9, 9), file.readBytes())
+        } finally {
+            folder.root.setWritable(true)
+        }
+    }
+
+    @Test
+    fun aPositionThatIsNotANumberMeansDamaged() {
+        val bytes = ByteArrayOutputStream().also {
+            DrawingFile.write(Drawing().apply { add(line(100f)) }.history(), it)
+        }.toByteArray()
+        // The first point's x is right after: magic, format, version, count, type, width, eraser, points.
+        val firstX = 4 + 4 + 8 + 4 + 1 + 4 + 1 + 4
+        java.nio.ByteBuffer.wrap(bytes).putFloat(firstX, Float.NaN)
+        File(folder.root, "drawing.ndrw").writeBytes(bytes)
+        assertTrue(DrawingStore(folder.root).load() is DrawingStore.Loaded.Damaged)
     }
 
     @Test
