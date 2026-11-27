@@ -77,6 +77,7 @@ private fun onPage(count: Int) = when (count) {
  * @param notice shown in the status line at the start instead of the usual hint.
  * @param alert shown in the status line each time a new one arrives (autosave problems).
  * @param onChange called after every change to [drawing], for autosave.
+ * @param onDrawings opens the list of drawings; null hides the button.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -85,6 +86,7 @@ fun DrawScreen(
     notice: String? = null,
     alert: StatusAlert? = null,
     onChange: () -> Unit = {},
+    onDrawings: (() -> Unit)? = null,
 ) {
     var strokes by remember { mutableStateOf(drawing.strokes) }
     var tool by rememberSaveable { mutableStateOf(Tool.Pen) }
@@ -186,6 +188,7 @@ fun DrawScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     itemVerticalAlignment = Alignment.CenterVertically,
                 ) {
+                    onDrawings?.let { NewtButton("Drawings", onClick = it) }
                     NewtButton("Undo", onClick = {
                         status = if (drawing.undo()) "Undone. ${onPage(drawing.strokes.size)}" else "Nothing to undo."
                         refresh()

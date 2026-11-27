@@ -330,4 +330,12 @@ class DrawScreenTest {
         alert = StatusAlert("Couldn't autosave.")
         composeRule.onNodeWithText("Couldn't autosave.").assertExists()
     }
+
+    @Test
+    fun theDrawingsButtonOpensTheList() {
+        var asked = 0
+        composeRule.setContent { NewtTheme { DrawScreen(Drawing(), onDrawings = { asked++ }) } }
+        composeRule.onNodeWithText("Drawings").performClick()
+        assertEquals(1, asked)
+    }
 }
