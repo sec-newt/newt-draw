@@ -31,7 +31,12 @@ no internet, no permissions.
 - **Save** puts the whole paper in your gallery, in **Pictures/Newt Draw**, as a
   3000 x 3000 PNG with a white background, however far you're zoomed in.
 - **Clear** wipes the paper after asking first.
-- **Your drawing keeps itself.** It's saved inside the app a moment (1.5 seconds) after
+- **Drawings** shows all your drawings, newest first, each with a small picture.
+  **New drawing** starts fresh paper; the one you were on is kept. **Open** goes back to
+  one, with its own Undo. **Rename** gives it a name, and **Delete** removes it after
+  asking first. Delete can't be undone (pictures you saved to your gallery stay).
+  A new drawing you never drew on isn't kept when you move to another.
+- **Your drawings keep themselves.** It's saved inside the app a moment (1.5 seconds) after
   you stop drawing, and straight away when you leave the app. If Android closes the app
   in the background, or the phone restarts, your drawing is there when you come back,
   and Undo still works, even to bring back a cleared page. If the app crashes or the
@@ -43,7 +48,8 @@ no internet, no permissions.
 - Only black ink: colors and a fill bucket are coming.
 - Shapes (line, circle, oval, square) are coming.
 - The app stays upright; it doesn't turn sideways yet.
-- One drawing at a time. To start fresh, Save the one you have, then Clear.
+- No way yet to open a picture (a photo, or a PNG you saved) to draw on; that comes
+  with layers.
 
 ## Install
 

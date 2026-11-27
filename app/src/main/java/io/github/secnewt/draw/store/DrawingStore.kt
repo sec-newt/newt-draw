@@ -7,17 +7,24 @@ import java.io.FileOutputStream
 import java.io.IOException
 
 /**
- * Keeps the drawing in one file in the app's private storage, so it survives Android
- * closing the app. No permission is needed and no other app can read it.
+ * Keeps one drawing in a file, `[id].ndrw`, in the app's private storage, so it survives
+ * Android closing the app. No permission is needed and no other app can read it.
  *
  * Saving writes a new file and then swaps it in, so a crash halfway through a save leaves
  * the last good save in place. A file that can't be read is moved aside under its own name,
  * never overwritten, so a bug in loading can't silently cost a drawing. If it can't even be
  * moved aside, saving stops rather than write over it.
  */
-class DrawingStore(private val dir: File, private val clock: () -> Long = System::currentTimeMillis) {
-    private val file = File(dir, "drawing.ndrw")
-    private val temp = File(dir, "drawing.ndrw.new")
+class DrawingStore(
+    private val dir: File,
+    private val id: String = "drawing",
+    private val clock: () -> Long = System::currentTimeMillis,
+) {
+    /** The saved drawing. Exists from the first save on. */
+    val file = File(dir, "$id.ndrw")
+    private val temp = File(dir, "$id.ndrw.new")
+
+    enum class Saved { Written, AlreadySaved, Failed }
 
     /** Version of the last save, so saving an unchanged drawing does nothing. */
     @Volatile
@@ -55,13 +62,12 @@ class DrawingStore(private val dir: File, private val clock: () -> Long = System
     /**
      * Saves [history] unless it's already saved. Safe to call from any thread; saves never
      * overlap, and an older history never replaces a newer one.
-     * Returns false if the save failed (the previous save is still there, and the next
-     * call tries again).
+     * [Saved.Failed] leaves the previous save in place, and the next call tries again.
      */
     @Synchronized
-    fun save(history: Drawing.History): Boolean {
-        if (blocked) return false
-        if (history.version <= savedVersion) return true
+    fun save(history: Drawing.History): Saved {
+        if (blocked) return Saved.Failed
+        if (history.version <= savedVersion) return Saved.AlreadySaved
         return try {
             FileOutputStream(temp).use { out ->
                 DrawingFile.write(history, out)
@@ -69,10 +75,10 @@ class DrawingStore(private val dir: File, private val clock: () -> Long = System
             }
             if (!temp.renameTo(file)) throw IOException("Couldn't replace the saved drawing")
             savedVersion = history.version
-            true
+            Saved.Written
         } catch (e: IOException) {
             temp.delete()
-            false
+            Saved.Failed
         }
     }
 
@@ -80,7 +86,7 @@ class DrawingStore(private val dir: File, private val clock: () -> Long = System
     private fun moveAside(): String? {
         val stamp = clock()
         val target = generateSequence(0) { it + 1 }
-            .map { n -> File(dir, if (n == 0) "drawing-damaged-$stamp.ndrw" else "drawing-damaged-$stamp-$n.ndrw") }
+            .map { n -> File(dir, if (n == 0) "$id-damaged-$stamp.ndrw" else "$id-damaged-$stamp-$n.ndrw") }
             .first { !it.exists() }
         return if (file.renameTo(target)) {
             target.name
