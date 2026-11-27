@@ -15,6 +15,12 @@ enum class Tool(val label: String) {
     Pen("Pen"),
     Eraser("Eraser"),
 
+    /** Tap inside an outline to fill it with the color. */
+    Fill("Fill"),
+
     /** One finger drags the paper, for when two-finger moves are hard. */
     Move("Move"),
 }
+
+/** The tools in the switch under the paper. Move is under More. */
+val SwitchTools = listOf(Tool.Pen, Tool.Eraser, Tool.Fill)

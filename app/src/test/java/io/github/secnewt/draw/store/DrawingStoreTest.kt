@@ -2,6 +2,8 @@ package io.github.secnewt.draw.store
 
 import io.github.secnewt.draw.model.Drawing
 import io.github.secnewt.draw.model.DrawingFile
+import io.github.secnewt.draw.model.Fill
+import io.github.secnewt.draw.model.Palette
 import io.github.secnewt.draw.model.Point
 import io.github.secnewt.draw.model.Stroke
 import org.junit.Assert.assertArrayEquals
@@ -30,7 +32,7 @@ class DrawingStoreTest {
         return (loaded as DrawingStore.Loaded.Found).drawing
     }
 
-    private fun Drawing.picture() = strokes.map { s -> Triple(s.width, s.eraser, s.points) }
+    private fun Drawing.picture() = strokes.map { s -> (s as Stroke).let { Triple(it.width, it.eraser, it.points) } }
 
     @Test
     fun firstRunHasNothingSaved() {
@@ -198,5 +200,48 @@ class DrawingStoreTest {
         val ms = (System.nanoTime() - start) / 1_000_000
         assertEquals(2000, reopened.strokes.size)
         assertTrue("loading took $ms ms", ms < 1000)
+    }
+
+    @Test
+    fun colorsAndFillsComeBack() {
+        val fill = Fill(intArrayOf(10, 5, 20, 11, 6, 19), Palette.Red.argb, behind = true)
+        val drawing = Drawing().apply {
+            add(Stroke(listOf(Point(1f, 2f), Point(3f, 4f)), 16f, color = Palette.Blue.argb))
+            add(fill)
+        }
+        DrawingStore(folder.root).save(drawing.history())
+        val back = found(DrawingStore(folder.root)).strokes
+        assertEquals(Palette.Blue.argb, (back[0] as Stroke).color)
+        val fillBack = back[1] as Fill
+        assertArrayEquals(fill.spans, fillBack.spans)
+        assertEquals(Palette.Red.argb, fillBack.color)
+        assertTrue(fillBack.behind)
+    }
+
+    @Test
+    fun aDrawingFromBeforeColorsLoadsInBlack() {
+        // Format 1, written by hand: one stroke of two points, no color.
+        val bytes = ByteArrayOutputStream().also { out ->
+            java.io.DataOutputStream(out).apply {
+                writeInt(0x4E445257); writeInt(1); writeLong(1)
+                writeInt(1); writeByte(0); writeFloat(16f); writeBoolean(false)
+                writeInt(2); writeFloat(1f); writeFloat(2f); writeFloat(3f); writeFloat(4f)
+                writeInt(0)
+            }
+        }.toByteArray()
+        File(folder.root, "drawing.ndrw").writeBytes(bytes)
+        val stroke = found(DrawingStore(folder.root)).strokes.single() as Stroke
+        assertEquals(Palette.Black.argb, stroke.color)
+        assertEquals(2, stroke.points.size)
+    }
+
+    @Test
+    fun aFillRunOffThePaperMeansDamaged() {
+        val drawing = Drawing().apply { add(Fill(intArrayOf(10, 5, 20), Palette.Red.argb, behind = false)) }
+        val bytes = ByteArrayOutputStream().also { DrawingFile.write(drawing.history(), it) }.toByteArray()
+        // The run's last column is the last int before the undone-actions count.
+        java.nio.ByteBuffer.wrap(bytes).putInt(bytes.size - 8, 99_999)
+        File(folder.root, "drawing.ndrw").writeBytes(bytes)
+        assertTrue(DrawingStore(folder.root).load() is DrawingStore.Loaded.Damaged)
     }
 }

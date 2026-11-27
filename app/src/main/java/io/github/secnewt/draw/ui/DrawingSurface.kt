@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import io.github.secnewt.draw.model.Bounds
+import io.github.secnewt.draw.model.Mark
 import io.github.secnewt.draw.model.PAPER_HEIGHT
 import io.github.secnewt.draw.model.PAPER_WIDTH
 import io.github.secnewt.draw.model.PaperView
@@ -52,7 +53,8 @@ private val GuideColor = Color(0xFF3760BF) // Tokyo Night Day blue: 5.8:1 on whi
  * The paper, which is bigger than the screen. One finger draws. Two fingers drag to scroll
  * and pinch to zoom; a stroke already started is cancelled when the second finger lands,
  * and nothing draws again until every finger is lifted. With [moveOnly] (the Move tool),
- * one finger drags the paper instead of drawing.
+ * one finger drags the paper instead of drawing. With [fillOnly] (the Fill tool), a
+ * one-finger tap reports where it landed through [onFill] instead of drawing.
  *
  * Strokes are in paper pixels. Finished strokes live in a cached image of the whole paper,
  * so only the stroke being drawn is redrawn as the finger moves.
@@ -64,16 +66,19 @@ private val GuideColor = Color(0xFF3760BF) // Tokyo Night Day blue: 5.8:1 on whi
  */
 @Composable
 fun DrawingSurface(
-    strokes: List<Stroke>,
+    strokes: List<Mark>,
     brushWidth: Float,
+    brushColor: Int,
     eraser: Boolean,
     moveOnly: Boolean,
+    fillOnly: Boolean,
     smoothingPx: Float,
     view: PaperView?,
     onLimits: (PaperView.Limits) -> Unit,
     onViewChange: (PaperView) -> Unit,
     onMoveEnd: () -> Unit,
     onStroke: (Stroke) -> Unit,
+    onFill: (Point) -> Unit,
     background: Color,
     edge: Color,
     modifier: Modifier = Modifier,
@@ -83,6 +88,7 @@ fun DrawingSurface(
     var finger by remember { mutableStateOf<Offset?>(null) }
     var limits by remember { mutableStateOf<PaperView.Limits?>(null) }
     val currentOnStroke by rememberUpdatedState(onStroke)
+    val currentOnFill by rememberUpdatedState(onFill)
     val currentOnView by rememberUpdatedState(onViewChange)
     val currentOnMoveEnd by rememberUpdatedState(onMoveEnd)
     val currentView by rememberUpdatedState(view)
@@ -105,7 +111,7 @@ fun DrawingSurface(
                     else -> "$count strokes"
                 }
             }
-            .pointerInput(brushWidth, eraser, moveOnly, smoothingPx) {
+            .pointerInput(brushWidth, brushColor, eraser, moveOnly, fillOnly, smoothingPx) {
                 awaitEachGesture {
                     // If the brush changes mid-stroke this is cancelled; finally still wipes
                     // the half-drawn line so nothing is left on screen that isn't in the drawing.
@@ -115,12 +121,13 @@ fun DrawingSurface(
                         val bounds = limits ?: return@awaitEachGesture
                         // The string is a set length on screen, so it's shorter on the paper when zoomed in.
                         val smoother = StringSmoother(smoothingPx / shown.scale)
+                        val tapped = shown.toPaper(down.position.toPoint())
                         live.clear()
-                        live.add(smoother.start(shown.toPaper(down.position.toPoint())))
+                        live.add(smoother.start(tapped))
                         finger = down.position
                         down.consume()
                         var moving = moveOnly
-                        if (moving) {
+                        if (moving || fillOnly) {
                             live.clear()
                             finger = null
                         }
@@ -158,6 +165,11 @@ fun DrawingSurface(
                             }
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (!change.pressed) break
+                            if (fillOnly) {
+                                // A fill is a tap: the finger sliding about changes nothing.
+                                change.consume()
+                                continue
+                            }
                             // Fast swipes deliver several samples per frame; use them all.
                             change.historical.forEach { sample ->
                                 smoother.move(shown.toPaper(sample.position.toPoint()))?.let(live::add)
@@ -166,9 +178,11 @@ fun DrawingSurface(
                             finger = change.position
                             change.consume()
                         }
-                        // A tap or line entirely on the grey margin would be an invisible stroke.
-                        if (!moving && live.isNotEmpty() && live.any { it.onPaper(brushWidth) }) {
-                            currentOnStroke(Stroke(live.toList(), brushWidth, eraser))
+                        if (fillOnly) {
+                            if (!moving) currentOnFill(tapped)
+                        } else if (!moving && live.isNotEmpty() && live.any { it.onPaper(brushWidth) }) {
+                            // A tap or line entirely on the grey margin would be an invisible stroke.
+                            currentOnStroke(Stroke(live.toList(), brushWidth, eraser, brushColor))
                         }
                     } finally {
                         live.clear()
@@ -187,7 +201,7 @@ fun DrawingSurface(
                 if (live.isNotEmpty()) {
                     // Ink only shows on the paper, never on the margin around it.
                     clipRect(0f, 0f, PAPER_WIDTH.toFloat(), PAPER_HEIGHT.toFloat()) {
-                        drawIntoCanvas { StrokePainter.drawPreview(it.nativeCanvas, Stroke(live.toList(), brushWidth, eraser)) }
+                        drawIntoCanvas { StrokePainter.drawPreview(it.nativeCanvas, Stroke(live.toList(), brushWidth, eraser, brushColor)) }
                     }
                 }
             }
@@ -225,9 +239,9 @@ private fun Point.onPaper(width: Float): Boolean {
  */
 internal class InkCache {
     private var bitmap: Bitmap? = null
-    private var drawn: List<Stroke> = emptyList()
+    private var drawn: List<Mark> = emptyList()
 
-    fun layer(strokes: List<Stroke>): Bitmap {
+    fun layer(strokes: List<Mark>): Bitmap {
         val current = bitmap ?: StrokePainter.inkLayer(PAPER_WIDTH, PAPER_HEIGHT, emptyList()).also {
             // Smaller copies for the zoomed-out view, so thin lines don't break up.
             it.setHasMipMap(true)
@@ -249,7 +263,7 @@ internal class InkCache {
         return current
     }
 
-    private fun redrawPatch(canvas: android.graphics.Canvas, kept: List<Stroke>, removed: List<Stroke>) {
+    private fun redrawPatch(canvas: android.graphics.Canvas, kept: List<Mark>, removed: List<Mark>) {
         // Whole pixels: a clip edge through the middle of a pixel would half-wipe it.
         val patch = removed.map { it.bounds }.reduce(Bounds::union).let {
             Bounds(floor(it.left), floor(it.top), ceil(it.right), ceil(it.bottom))
@@ -262,6 +276,6 @@ internal class InkCache {
     }
 
     /** True if [list] begins with exactly the strokes in [prefix] (same objects, same order). */
-    private fun startsWith(list: List<Stroke>, prefix: List<Stroke>) =
+    private fun startsWith(list: List<Mark>, prefix: List<Mark>) =
         list.size >= prefix.size && (prefix.isEmpty() || list[prefix.size - 1] === prefix.last())
 }

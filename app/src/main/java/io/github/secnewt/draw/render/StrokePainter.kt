@@ -7,16 +7,18 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
+import io.github.secnewt.draw.model.Fill
+import io.github.secnewt.draw.model.Mark
 import io.github.secnewt.draw.model.Point
 import io.github.secnewt.draw.model.Stroke
 
-/** Paper is always white and ink always black in Phase 1, in light and dark mode alike. */
+/** The paper is always white, in light and dark mode alike. */
 const val PAPER = Color.WHITE
-const val INK = Color.BLACK
 
 /**
- * Draws strokes onto an Android canvas. Pen strokes add black ink; eraser strokes clear
- * the ink back to transparent, so ink lives on its own see-through layer above the paper.
+ * Draws marks onto an Android canvas. Ink lives on its own see-through layer: pen strokes
+ * and fills add color, eraser strokes clear it back to transparent, and fills on empty
+ * paper go behind the ink already there.
  */
 object StrokePainter {
 
@@ -25,7 +27,7 @@ object StrokePainter {
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
         when {
-            !stroke.eraser -> color = INK
+            !stroke.eraser -> color = stroke.color
             // While the eraser is still moving, it's drawn in paper color on top of the
             // finished picture; on white paper that looks exactly like the real erase.
             previewOnPaper -> color = PAPER
@@ -33,13 +35,16 @@ object StrokePainter {
         }
     }
 
-    /** Draws [stroke] onto the ink layer [canvas]. */
-    fun draw(canvas: Canvas, stroke: Stroke) = draw(canvas, stroke, previewOnPaper = false)
+    /** Draws [mark] onto the ink layer [canvas]. */
+    fun draw(canvas: Canvas, mark: Mark) = when (mark) {
+        is Stroke -> drawStroke(canvas, mark, previewOnPaper = false)
+        is Fill -> drawFill(canvas, mark)
+    }
 
     /** Draws a stroke still in progress over the finished picture. */
-    fun drawPreview(canvas: Canvas, stroke: Stroke) = draw(canvas, stroke, previewOnPaper = true)
+    fun drawPreview(canvas: Canvas, stroke: Stroke) = drawStroke(canvas, stroke, previewOnPaper = true)
 
-    private fun draw(canvas: Canvas, stroke: Stroke, previewOnPaper: Boolean) {
+    private fun drawStroke(canvas: Canvas, stroke: Stroke, previewOnPaper: Boolean) {
         val paint = paintFor(stroke, previewOnPaper)
         val points = stroke.points
         if (points.size == 1) {
@@ -50,6 +55,20 @@ object StrokePainter {
         }
         paint.style = Paint.Style.STROKE
         canvas.drawPath(smoothPath(points), paint)
+    }
+
+    /** A fill is whole pixels, so it's drawn as rows of rectangles, without smoothing. */
+    private fun drawFill(canvas: Canvas, fill: Fill) {
+        val paint = Paint().apply {
+            color = fill.color
+            style = Paint.Style.FILL
+            if (fill.behind) xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_OVER)
+        }
+        val spans = fill.spans
+        for (i in 0 until fill.runs) {
+            val y = spans[3 * i].toFloat()
+            canvas.drawRect(spans[3 * i + 1].toFloat(), y, spans[3 * i + 2] + 1f, y + 1f, paint)
+        }
     }
 
     /**
@@ -67,24 +86,22 @@ object StrokePainter {
         lineTo(last.x, last.y)
     }
 
-    /** A see-through ink layer with every stroke drawn in order. */
-    fun inkLayer(width: Int, height: Int, strokes: List<Stroke>): Bitmap {
+    /** A see-through ink layer with every mark drawn in order. */
+    fun inkLayer(width: Int, height: Int, marks: List<Mark>): Bitmap {
         val layer = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(layer)
-        strokes.forEach { draw(canvas, it) }
+        marks.forEach { draw(canvas, it) }
         return layer
     }
 
     /**
-     * The finished picture: white paper with the ink on top. This is what gets saved. On
-     * solid white paper an eraser stroke is the same as painting white, so this needs just
-     * one image (a 3000 x 3000 image is 36 MB).
+     * The finished picture: white paper with the ink on top. This is what gets saved.
+     * The ink is drawn first, then white goes in behind it in the same image, so it needs
+     * just one image (a 3000 x 3000 image is 36 MB).
      */
-    fun picture(width: Int, height: Int, strokes: List<Stroke>): Bitmap {
-        val picture = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(picture)
-        canvas.drawColor(PAPER)
-        strokes.forEach { draw(canvas, it, previewOnPaper = true) }
-        return picture
-    }
+    fun picture(width: Int, height: Int, marks: List<Mark>): Bitmap =
+        inkLayer(width, height, marks).also { onPaper(Canvas(it)) }
+
+    /** Puts white paper behind whatever is already drawn on [canvas]. */
+    fun onPaper(canvas: Canvas) = canvas.drawColor(PAPER, PorterDuff.Mode.DST_OVER)
 }

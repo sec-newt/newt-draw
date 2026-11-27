@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import io.github.secnewt.draw.model.Drawing
+import io.github.secnewt.draw.model.Fill
+import io.github.secnewt.draw.model.Palette
 import io.github.secnewt.draw.model.PaperView
 import io.github.secnewt.draw.model.Point
 import io.github.secnewt.draw.model.Stroke
@@ -96,11 +98,11 @@ class DrawScreenTest {
         swipeAcross()
         paper.assert(hasStrokes("1 stroke"))
         assertEquals(1, drawing.strokes.size)
-        assertTrue("a long swipe gives the stroke many points", drawing.strokes[0].points.size > 5)
+        assertTrue("a long swipe gives the stroke many points", (drawing.strokes[0] as Stroke).points.size > 5)
     }
 
     /** How much paper, left to right, the same screen swipe covers. */
-    private fun Drawing.lastSpan() = strokes.last().points.let { p -> p.maxOf { it.x } - p.minOf { it.x } }
+    private fun Drawing.lastSpan() = (strokes.last() as Stroke).points.let { p -> p.maxOf { it.x } - p.minOf { it.x } }
 
     private fun pinchOut() = paper.performTouchInput {
         pinch(
@@ -128,11 +130,12 @@ class DrawScreenTest {
         var view by mutableStateOf<PaperView?>(null)
         composeRule.setContent {
             DrawingSurface(
-                strokes = emptyList(), brushWidth = 10f, eraser = false, moveOnly = false,
+                strokes = emptyList(), brushWidth = 10f, brushColor = 0, eraser = false, moveOnly = false, fillOnly = false,
                 smoothingPx = 0f, view = view,
                 onLimits = { view = (view ?: PaperView(0.75f, -100f, -100f)).refitted(it) },
                 onViewChange = { view = it }, onMoveEnd = {},
                 onStroke = { error("A pinch must not draw") },
+                onFill = { error("A pinch must not fill") },
                 background = Color.White, edge = Color.Black,
                 modifier = Modifier.size(paperWidth, 240.dp),
             )
@@ -197,7 +200,7 @@ class DrawScreenTest {
         val drawing = Drawing()
         show(drawing)
         more("Zoom in")
-        composeRule.onNodeWithText("Move").performClick()
+        more("Move tool")
         swipeAcross()
         paper.assert(hasStrokes("Blank"))
     }
@@ -218,7 +221,7 @@ class DrawScreenTest {
         swipeAcross()
         // A swipe across most of the screen at the whole-page view spans most of the 3000-wide paper.
         assertTrue(drawing.lastSpan() > 1200f)
-        assertTrue(drawing.strokes.last().points.all { it.x in 0f..3000f && it.y in 0f..3000f })
+        assertTrue((drawing.strokes.last() as Stroke).points.all { it.x in 0f..3000f && it.y in 0f..3000f })
     }
 
     @Test
@@ -273,7 +276,7 @@ class DrawScreenTest {
         show(drawing)
         composeRule.onNodeWithText("Eraser").performClick()
         swipeAcross()
-        assertTrue(drawing.strokes.single().eraser)
+        assertTrue((drawing.strokes.single() as Stroke).eraser)
     }
 
     @Test
@@ -356,5 +359,50 @@ class DrawScreenTest {
         val screen = composeRule.onRoot().fetchSemanticsNode().size.height
         val paperHeight = paper.fetchSemanticsNode().size.height
         assertTrue("the paper gets $paperHeight of $screen pixels", paperHeight > screen * 0.7f)
+    }
+
+    @Test
+    fun pickingAColorDrawsInIt() {
+        val drawing = Drawing()
+        show(drawing)
+        composeRule.onNodeWithContentDescription("Color: Black").performClick()
+        composeRule.onNodeWithText("Red").performClick()
+        composeRule.onNodeWithText("Color: Red.").assertExists()
+        composeRule.onNodeWithContentDescription("Color: Red").assertExists()
+        swipeAcross()
+        assertEquals(Palette.Red.argb, (drawing.strokes.single() as Stroke).color)
+    }
+
+    @Test
+    fun theFillBucketFillsInsideTheFace() {
+        val drawing = sketch()
+        show(drawing)
+        composeRule.onNodeWithContentDescription("Color: Black").performClick()
+        composeRule.onNodeWithText("Peach").performClick()
+        composeRule.onNodeWithText("Fill").performClick()
+        // The middle of the paper is inside the face, between the eyes and the smile.
+        paper.performTouchInput { click(center) }
+        composeRule.waitUntil(timeoutMillis = 20_000) { drawing.strokes.size == 5 }
+        composeRule.onNodeWithText("Filled with Peach.").assertExists()
+        val fill = drawing.strokes.last() as Fill
+        assertTrue(fill.behind)
+        // Inside the face, but not outside it: the face is a circle of radius 900 at the middle.
+        val area = fill.spans.toList().chunked(3).sumOf { (_, a, b) -> b - a + 1L }
+        assertTrue("fill area $area is about the face", area in 1_500_000L..2_600_000L)
+        composeRule.onNodeWithText("Undo").performClick()
+        paper.assert(hasStrokes("4 strokes"))
+    }
+
+    @Test
+    fun theMoveToolIsUnderMore() {
+        val drawing = Drawing()
+        show(drawing)
+        more("Move tool")
+        composeRule.onNodeWithText("Move: one finger drags the paper. Tap Pen to draw again.").assertExists()
+        swipeAcross()
+        paper.assert(hasStrokes("Blank"))
+        composeRule.onNodeWithText("Pen").performClick()
+        swipeAcross()
+        paper.assert(hasStrokes("1 stroke"))
     }
 }

@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.secnewt.draw.model.Drawing
 import io.github.secnewt.draw.model.PAPER_HEIGHT
 import io.github.secnewt.draw.model.PAPER_WIDTH
+import io.github.secnewt.draw.model.Mark
 import io.github.secnewt.draw.model.Point
 import io.github.secnewt.draw.model.Stroke
 import io.github.secnewt.draw.render.StrokePainter
@@ -33,7 +34,7 @@ class InkCacheTest {
      * doesn't build up (each undo redraws its patch from scratch). Anything more is a bug:
      * a missing or stale stroke differs by full ink (255/255).
      */
-    private fun assertSameAsFullRedraw(cache: InkCache, strokes: List<Stroke>) {
+    private fun assertSameAsFullRedraw(cache: InkCache, strokes: List<Mark>) {
         val expected = StrokePainter.inkLayer(PAPER_WIDTH, PAPER_HEIGHT, strokes)
         val actual = cache.layer(strokes)
         var differing = 0
