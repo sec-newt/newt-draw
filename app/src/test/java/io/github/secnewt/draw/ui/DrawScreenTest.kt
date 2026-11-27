@@ -5,6 +5,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -292,5 +295,39 @@ class DrawScreenTest {
         composeRule.onNodeWithText("Smooth: Medium").performClick()
         composeRule.onNodeWithText("High").performClick()
         composeRule.onNodeWithText("Smooth: High").assertExists()
+    }
+
+    @Test
+    fun aNoticeShowsAtTheStart() {
+        composeRule.setContent { NewtTheme { DrawScreen(sketch(), notice = "Welcome back. Your drawing is as you left it.") } }
+        composeRule.onNodeWithText("Welcome back. Your drawing is as you left it.").assertExists()
+        paper.assert(hasStrokes("4 strokes"))
+    }
+
+    @Test
+    fun everyChangeAsksForASaveAndNothingElseDoes() {
+        var changes = 0
+        composeRule.setContent { NewtTheme { DrawScreen(Drawing(), onChange = { changes++ }) } }
+        composeRule.onNodeWithText("Undo").performClick() // nothing to undo
+        composeRule.onNodeWithText("Zoom in").performClick()
+        assertEquals(0, changes)
+        swipeAcross()
+        composeRule.runOnIdle { assertEquals(1, changes) }
+        composeRule.onNodeWithText("Undo").performClick()
+        composeRule.onNodeWithText("Redo").performClick()
+        composeRule.runOnIdle { assertEquals(3, changes) }
+    }
+
+    @Test
+    fun anAutosaveProblemShowsInTheStatusLine() {
+        var alert by mutableStateOf<StatusAlert?>(null)
+        composeRule.setContent { NewtTheme { DrawScreen(Drawing(), alert = alert) } }
+        alert = StatusAlert("Couldn't autosave.")
+        composeRule.onNodeWithText("Couldn't autosave.").assertExists()
+        composeRule.onNodeWithText("Undo").performClick()
+        composeRule.onNodeWithText("Nothing to undo.").assertExists()
+        // The same words again still show: each alert is new.
+        alert = StatusAlert("Couldn't autosave.")
+        composeRule.onNodeWithText("Couldn't autosave.").assertExists()
     }
 }

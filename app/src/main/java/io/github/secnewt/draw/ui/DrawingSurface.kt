@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import io.github.secnewt.draw.model.Bounds
 import io.github.secnewt.draw.model.PAPER_HEIGHT
 import io.github.secnewt.draw.model.PAPER_WIDTH
 import io.github.secnewt.draw.model.PaperView
@@ -41,6 +42,8 @@ import io.github.secnewt.draw.model.Stroke
 import io.github.secnewt.draw.model.StringSmoother
 import io.github.secnewt.draw.render.PAPER
 import io.github.secnewt.draw.render.StrokePainter
+import kotlin.math.ceil
+import kotlin.math.floor
 
 /** The ring and string that show where the ink is while smoothing pulls it behind the finger. */
 private val GuideColor = Color(0xFF3760BF) // Tokyo Night Day blue: 5.8:1 on white paper
@@ -214,11 +217,13 @@ private fun Point.onPaper(width: Float): Boolean {
 }
 
 /**
- * Keeps the whole-paper ink image between frames. When the only change is new strokes added
- * on the end, it draws just those; anything else (undo, redo of a clear) wipes the same image
- * and replays every stroke.
+ * Keeps the whole-paper ink image between frames, and changes as little of it as it can:
+ * - strokes added on the end (drawing, redo): draws just those;
+ * - strokes taken off the end (undo): wipes only the patch they covered and redraws the
+ *   strokes that touch that patch, so undo stays quick on a big drawing;
+ * - anything else (undoing a clear): wipes the image and redraws every stroke.
  */
-private class InkCache {
+internal class InkCache {
     private var bitmap: Bitmap? = null
     private var drawn: List<Stroke> = emptyList()
 
@@ -229,15 +234,34 @@ private class InkCache {
             bitmap = it
             drawn = emptyList()
         }
-        val appended = strokes.size >= drawn.size && (drawn.isEmpty() || strokes[drawn.size - 1] === drawn.last())
+        if (strokes === drawn) return current
         val canvas = android.graphics.Canvas(current)
-        if (appended) {
-            for (i in drawn.size until strokes.size) StrokePainter.draw(canvas, strokes[i])
-        } else {
-            current.eraseColor(android.graphics.Color.TRANSPARENT)
-            strokes.forEach { StrokePainter.draw(canvas, it) }
+        when {
+            startsWith(strokes, drawn) ->
+                for (i in drawn.size until strokes.size) StrokePainter.draw(canvas, strokes[i])
+            startsWith(drawn, strokes) -> redrawPatch(canvas, strokes, drawn.subList(strokes.size, drawn.size))
+            else -> {
+                current.eraseColor(android.graphics.Color.TRANSPARENT)
+                strokes.forEach { StrokePainter.draw(canvas, it) }
+            }
         }
         drawn = strokes
         return current
     }
+
+    private fun redrawPatch(canvas: android.graphics.Canvas, kept: List<Stroke>, removed: List<Stroke>) {
+        // Whole pixels: a clip edge through the middle of a pixel would half-wipe it.
+        val patch = removed.map { it.bounds }.reduce(Bounds::union).let {
+            Bounds(floor(it.left), floor(it.top), ceil(it.right), ceil(it.bottom))
+        }
+        canvas.save()
+        canvas.clipRect(patch.left.toInt(), patch.top.toInt(), patch.right.toInt(), patch.bottom.toInt())
+        canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+        for (stroke in kept) if (stroke.bounds.intersects(patch)) StrokePainter.draw(canvas, stroke)
+        canvas.restore()
+    }
+
+    /** True if [list] begins with exactly the strokes in [prefix] (same objects, same order). */
+    private fun startsWith(list: List<Stroke>, prefix: List<Stroke>) =
+        list.size >= prefix.size && (prefix.isEmpty() || list[prefix.size - 1] === prefix.last())
 }

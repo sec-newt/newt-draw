@@ -47,7 +47,7 @@ Built and merged one step at a time, each its own pull request, in this order:
 | Step | Feature | Done when |
 |---|---|---|
 | 2a | **Big paper** (3000 x 3000) you can move: one finger draws, two fingers drag to scroll and pinch to zoom; a "Whole page" button | Zooming keeps the spot between your fingers still (automated); a stroke drawn while zoomed lands in the right place on the paper (automated); Save writes the whole paper |
-| 2b | **Autosave**: the drawing survives Android closing the app | Kill the app in the emulator, reopen, drawing is back |
+| 2b | **Autosave**: the drawing survives Android closing the app, undo history included | Kill the app in the emulator, reopen, drawing is back (done: force-stop and background kill, then Undo of a Clear after reopening); damaged or half-written saves never cost the drawing (automated) |
 | 2c | **Colors** and a **fill bucket** (tap a closed area to fill it) | Fill stays inside lines and doesn't leak through small gaps; colors readable by name for TalkBack |
 | 2d | **Shapes**: line, circle, oval, square, rectangle | Drag to size; the shape is one stroke (undo removes it whole) |
 | 2e | **Save with a transparent background** (option) and **paper shape** choice | The saved PNG is see-through where there's no ink |
