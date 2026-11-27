@@ -14,10 +14,10 @@ package io.github.secnewt.draw.model
 class Drawing {
     /** Something that was done. Immutable, so a [History] can be saved on another thread. */
     sealed interface Action {
-        class Add(val stroke: Stroke) : Action
+        class Add(val mark: Mark) : Action
 
         /** Clearing. [before] is what was on the paper, filled in when the clear happens. */
-        class Clear internal constructor(internal val before: List<Stroke>) : Action {
+        class Clear internal constructor(internal val before: List<Mark>) : Action {
             constructor() : this(emptyList())
         }
     }
@@ -25,7 +25,7 @@ class Drawing {
     /** Everything needed to rebuild the drawing: what's been done, and what can be redone. */
     class History(val done: List<Action>, val undone: List<Action>, val version: Long)
 
-    var strokes: List<Stroke> = emptyList()
+    var strokes: List<Mark> = emptyList()
         private set
 
     /** Goes up by one with every change, so autosave can tell if there's anything new. */
@@ -38,8 +38,8 @@ class Drawing {
     val canUndo: Boolean get() = undoStack.isNotEmpty()
     val canRedo: Boolean get() = redoStack.isNotEmpty()
 
-    fun add(stroke: Stroke) {
-        undoStack.addLast(perform(Action.Add(stroke)))
+    fun add(mark: Mark) {
+        undoStack.addLast(perform(Action.Add(mark)))
         redoStack.clear()
         version++
     }
@@ -77,7 +77,7 @@ class Drawing {
 
     /** Does [action] and returns it as it should sit on the undo stack. */
     private fun perform(action: Action): Action = when (action) {
-        is Action.Add -> action.also { strokes = strokes + it.stroke }
+        is Action.Add -> action.also { strokes = strokes + it.mark }
         is Action.Clear -> Action.Clear(strokes).also { strokes = emptyList() }
     }
 
@@ -85,10 +85,10 @@ class Drawing {
         /** Rebuilds a drawing from a saved [history], with the same undo and redo. */
         fun from(history: History) = Drawing().apply {
             // One growing list rather than a new list per stroke: a big drawing loads fast.
-            val paper = ArrayList<Stroke>()
+            val paper = ArrayList<Mark>()
             history.done.forEach { action ->
                 when (action) {
-                    is Action.Add -> undoStack.addLast(action).also { paper.add(action.stroke) }
+                    is Action.Add -> undoStack.addLast(action).also { paper.add(action.mark) }
                     is Action.Clear -> undoStack.addLast(Action.Clear(paper.toList())).also { paper.clear() }
                 }
             }

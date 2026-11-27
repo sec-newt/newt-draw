@@ -49,7 +49,7 @@ Built and merged one step at a time, each its own pull request, in this order:
 | 2a | **Big paper** (3000 x 3000) you can move: one finger draws, two fingers drag to scroll and pinch to zoom; a "Whole page" button | Zooming keeps the spot between your fingers still (automated); a stroke drawn while zoomed lands in the right place on the paper (automated); Save writes the whole paper |
 | 2b | **Autosave**: the drawing survives Android closing the app, undo history included | Kill the app in the emulator, reopen, drawing is back (done: force-stop and background kill, then Undo of a Clear after reopening); damaged or half-written saves never cost the drawing (automated) |
 | 2c | **Drawings**: more than one drawing. A list with a small picture of each; New drawing, Open, Rename, Delete (asks first). Each keeps its own undo history | Make two drawings, switch between them, kill the app: both come back with their undo (emulator); the drawing from before this step shows up as "Drawing 1" (automated) |
-| 2d | **Colors** and a **fill bucket** (tap a closed area to fill it) | Fill stays inside lines and doesn't leak through small gaps; colors readable by name for TalkBack |
+| 2d | **Colors** and a **fill bucket** (tap a closed area to fill it) | Fill stays inside lines and doesn't leak through small gaps (automated: closed, 16 px gap, 60 px opening); colors readable by name for TalkBack (Color button says "Color: Red"; every swatch has its name); emulator: a triangle filled Peach |
 | 2e | **Shapes**: line, circle, oval, square, rectangle | Drag to size; the shape is one stroke (undo removes it whole) |
 | 2f | **Save with a transparent background** (option) and **paper shape** choice | The saved PNG is see-through where there's no ink |
 

@@ -9,9 +9,9 @@ no internet, no permissions.
 
 ## Using it
 
-The paper gets most of the screen. Under it are **Pen / Eraser / Move**, then
-**Undo**, **Redo** and **More**. More holds everything else: Size, Smooth, Zoom in,
-Zoom out, Whole page, Drawings, Save and Clear.
+The paper gets most of the screen. Under it are **Pen / Eraser / Fill**, then
+**Undo**, **Redo**, the **Color** button and **More**. More holds everything else:
+Size, Smooth, Zoom in, Zoom out, the Move tool, Whole page, Drawings, Save and Clear.
 
 - **Draw** with one finger on the white paper.
 - **Move and zoom the paper.** The paper is a big square (3000 x 3000), larger
@@ -19,7 +19,8 @@ Zoom out, Whole page, Drawings, Save and Clear.
   and tap **Whole page** to see all of it again. Zoomed in, your finger is more precise:
   at 3x, a wobble is a third the size on the paper. A second finger landing cancels the
   line you were drawing, and nothing draws until all fingers are lifted.
-  To drag with one finger without drawing, choose **Move**. Choose **Pen** to draw again.
+  To drag with one finger without drawing, choose **More**, then **Move tool**. Tap **Pen**
+  to draw again.
   Tap **Zoom in** for a closer view or **Zoom out** to see more of the paper.
 - **Smooth** steadies your line. The ink follows your finger on a short invisible
   string, so small wobbles never reach the paper. While you draw, a blue ring shows
@@ -27,7 +28,13 @@ Zoom out, Whole page, Drawings, Save and Clear.
   lines, but the ink trails further behind your finger. Medium is the default.
   Every line stops a little short of where you lift your finger (further on High),
   and a very short flick on High comes out as just a dot. Use Low or Off for tiny details.
-- **Pen / Eraser** picks what your finger does. The eraser really removes ink.
+- **Pen / Eraser / Fill** picks what your finger does. The eraser really removes ink.
+- **Color** shows the color you're using, by name. Tap it to pick another: 14 colors,
+  each with its name under it. Pen lines and fills use it.
+- **Fill** (the paint bucket): tap inside an outline to fill it with the color. The fill
+  goes behind your lines, so they stay crisp. Small gaps where a line doesn't quite meet
+  (up to about 24 pixels on the 3000-pixel paper) don't let it leak out; a wider opening
+  does, and Undo takes the fill back. Tap a filled area with another color to recolor it.
 - **Size** sets how thick the pen or eraser is. Sizes are on the paper, like a real pen,
   so lines look thicker when you zoom in.
 - **Undo / Redo** step back and forward through your strokes. Undo also brings back
@@ -49,7 +56,7 @@ Zoom out, Whole page, Drawings, Save and Clear.
 
 ## Not yet (on purpose)
 
-- Only black ink: colors and a fill bucket are coming.
+- 14 set colors; no mixing your own yet.
 - Shapes (line, circle, oval, square) are coming.
 - The app stays upright; it doesn't turn sideways yet.
 - No way yet to open a picture (a photo, or a PNG you saved) to draw on; that comes

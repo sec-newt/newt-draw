@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -36,6 +35,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.secnewt.draw.model.BrushSize
 import io.github.secnewt.draw.model.Drawing
+import io.github.secnewt.draw.model.FloodFill
+import io.github.secnewt.draw.model.Palette
+import io.github.secnewt.draw.model.Point
+import io.github.secnewt.draw.model.SwitchTools
 import io.github.secnewt.draw.model.PAPER_HEIGHT
 import io.github.secnewt.draw.model.PAPER_WIDTH
 import io.github.secnewt.draw.model.PaperView
@@ -51,13 +54,14 @@ import io.github.secnewt.ui.NewtTone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.floor
 
 private const val HELLO = "One finger draws. Two fingers drag to scroll and pinch to zoom."
 
 /** A message for the status line. Each new one is shown, even if the words are the same. */
 class StatusAlert(val text: String)
 
-private enum class Dialog { More, Size, Smoothing, Clear }
+private enum class Dialog { More, Color, Size, Smoothing, Clear }
 
 /** "Zoom 300%." — relative to the whole page fitting on screen. */
 private fun zoomText(view: PaperView, limits: PaperView.Limits) = "Zoom ${view.percentOf(PaperView.fit(limits))}%."
@@ -92,11 +96,13 @@ fun DrawScreen(
     var tool by rememberSaveable { mutableStateOf(Tool.Pen) }
     var size by rememberSaveable { mutableStateOf(BrushSize.Medium) }
     var smoothing by rememberSaveable { mutableStateOf(Smoothing.Medium) }
+    var color by rememberSaveable { mutableStateOf(Palette.Black) }
     var status by remember { mutableStateOf(notice ?: HELLO) }
     var dialog by remember { mutableStateOf<Dialog?>(null) }
     var limits by remember { mutableStateOf<PaperView.Limits?>(null) }
     var view by remember { mutableStateOf<PaperView?>(null) }
     var saving by remember { mutableStateOf(false) }
+    var filling by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -105,6 +111,49 @@ fun DrawScreen(
     fun refresh() {
         if (strokes !== drawing.strokes) onChange()
         strokes = drawing.strokes
+    }
+
+    /** Fills the area around [at] with the color. Works it out in the background. */
+    fun fill(at: Point) {
+        if (filling) return
+        val x = floor(at.x).toInt()
+        val y = floor(at.y).toInt()
+        if (x !in 0 until PAPER_WIDTH || y !in 0 until PAPER_HEIGHT) {
+            status = "Tap on the paper to fill."
+            return
+        }
+        filling = true
+        status = "Filling…"
+        val snapshot = strokes
+        val with = color
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.Default) {
+                    try {
+                        val layer = StrokePainter.inkLayer(PAPER_WIDTH, PAPER_HEIGHT, snapshot)
+                        val pixels = IntArray(PAPER_WIDTH * PAPER_HEIGHT)
+                        layer.getPixels(pixels, 0, PAPER_WIDTH, 0, 0, PAPER_WIDTH, PAPER_HEIGHT)
+                        layer.recycle()
+                        FloodFill.fill(pixels, PAPER_WIDTH, PAPER_HEIGHT, x, y, with.argb)
+                    } catch (_: OutOfMemoryError) {
+                        null
+                    }
+                }
+                status = when {
+                    drawing.strokes !== snapshot -> "The drawing changed while filling. Tap again to fill."
+                    result == null -> "Couldn't fill: the phone ran short of memory. Close other apps and try again."
+                    result is FloodFill.Result.Filled -> {
+                        drawing.add(result.fill)
+                        refresh()
+                        "Filled with ${with.label}."
+                    }
+                    result == FloodFill.Result.AlreadyThatColor -> "That's already ${with.label}."
+                    else -> "Tap on the paper to fill."
+                }
+            } finally {
+                filling = false
+            }
+        }
     }
 
     fun save() {
@@ -144,6 +193,9 @@ fun DrawScreen(
                 brushWidth = size.width,
                 eraser = tool == Tool.Eraser,
                 moveOnly = tool == Tool.Move,
+                fillOnly = tool == Tool.Fill,
+                brushColor = color.argb,
+                onFill = ::fill,
                 smoothingPx = with(density) { smoothing.radiusDp.dp.toPx() },
                 view = view,
                 onLimits = { new ->
@@ -184,28 +236,49 @@ fun DrawScreen(
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 )
                 NewtChoice(
-                    options = Tool.entries,
-                    selected = tool,
+                    options = SwitchTools,
+                    // Nothing is lit while the Move tool (under More) is on.
+                    selected = tool.takeIf { it in SwitchTools },
                     label = { it.label },
-                    onSelect = { tool = it },
+                    onSelect = {
+                        tool = it
+                        status = when (it) {
+                            Tool.Fill -> "Fill: tap inside an outline to fill it with ${color.label}."
+                            Tool.Eraser -> "Eraser: rub out ink with one finger."
+                            else -> "Pen: draw with one finger, in ${color.label}."
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    NewtButton("Undo", modifier = Modifier.weight(1f), onClick = {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    NewtButton("Undo", onClick = {
                         status = if (drawing.undo()) "Undone. ${onPage(drawing.strokes.size)}" else "Nothing to undo."
                         refresh()
                     })
-                    NewtButton("Redo", modifier = Modifier.weight(1f), onClick = {
+                    NewtButton("Redo", onClick = {
                         status = if (drawing.redo()) "Redone. ${onPage(drawing.strokes.size)}" else "Nothing to redo."
                         refresh()
                     })
-                    NewtButton("More", modifier = Modifier.weight(1f), onClick = { dialog = Dialog.More })
+                    ColorButton(color, onClick = { dialog = Dialog.Color })
+                    NewtButton("More", onClick = { dialog = Dialog.More })
                 }
             }
         }
     }
 
     when (dialog) {
+        Dialog.Color -> ColorDialog(
+            selected = color,
+            onPick = {
+                color = it
+                dialog = null
+                status = "Color: ${it.label}."
+            },
+            onDismiss = { dialog = null },
+        )
         Dialog.Size -> ChoiceDialog(
             title = "Brush size",
             options = BrushSize.entries,
@@ -262,6 +335,10 @@ fun DrawScreen(
                             NewtButton("Zoom out", onClick = then {
                                 val l = limits ?: return@then
                                 view = view?.zoomedAtCentre(0.5f, l)?.also { status = zoomText(it, l) }
+                            })
+                            NewtButton("Move tool", onClick = then {
+                                tool = Tool.Move
+                                status = "Move: one finger drags the paper. Tap Pen to draw again."
                             })
                             NewtButton("Whole page", onClick = then {
                                 limits?.let { view = PaperView.fit(it) }
