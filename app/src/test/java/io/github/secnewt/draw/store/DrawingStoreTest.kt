@@ -44,7 +44,7 @@ class DrawingStoreTest {
             add(line(300f, width = 64f, eraser = true))
             add(Stroke(listOf(Point(1500f, 1500f)), 8f)) // a single dot
         }
-        assertTrue(DrawingStore(folder.root).save(drawing.history()))
+        assertEquals(DrawingStore.Saved.Written, DrawingStore(folder.root).save(drawing.history()))
         assertEquals(drawing.picture(), found(DrawingStore(folder.root)).picture())
     }
 
@@ -117,7 +117,7 @@ class DrawingStoreTest {
         val loaded = store.load()
         assertTrue(loaded is DrawingStore.Loaded.Damaged)
         assertEquals("drawing-damaged-1234.ndrw", (loaded as DrawingStore.Loaded.Damaged).keptAs)
-        assertTrue(store.save(Drawing().apply { add(line(100f)) }.history()))
+        assertEquals(DrawingStore.Saved.Written, store.save(Drawing().apply { add(line(100f)) }.history()))
         assertArrayEquals(garbage, File(folder.root, "drawing-damaged-1234.ndrw").readBytes())
     }
 
@@ -144,7 +144,7 @@ class DrawingStoreTest {
             assertEquals(null, loaded.keptAs)
             folder.root.setWritable(true)
             // Even once the folder is writable again, this run never saves over the file.
-            assertEquals(false, store.save(Drawing().apply { add(line(100f)) }.history()))
+            assertEquals(DrawingStore.Saved.Failed, store.save(Drawing().apply { add(line(100f)) }.history()))
             assertArrayEquals(byteArrayOf(9, 9, 9), file.readBytes())
         } finally {
             folder.root.setWritable(true)
