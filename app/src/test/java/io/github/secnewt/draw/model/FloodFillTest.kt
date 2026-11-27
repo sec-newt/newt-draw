@@ -113,4 +113,24 @@ class FloodFillTest {
         assertTrue("filling took $ms ms", ms < 5000)
         println("FILL 3000x3000 took $ms ms")
     }
+
+    @Test
+    fun tappingRightNextToALineStillKeepsGapsClosed() {
+        // One pixel inside the left edge, with a 10-pixel opening in the top edge.
+        val fill = filled(FloodFill.fill(box(gap = 10), w, h, 54, 100, red))
+        assertTrue(fill.covers(100, 100))
+        assertFalse("doesn't leak through the opening", fill.covers(20, 20))
+    }
+
+    @Test
+    fun aClosedThinArmFillsAllTheWay() {
+        // All ink, with an empty chamber and a thin empty arm off its side.
+        val pixels = IntArray(w * h) { black }
+        for (y in 10..89) for (x in 10..69) pixels[y * w + x] = 0
+        for (y in 45..54) for (x in 70..139) pixels[y * w + x] = 0
+        val fill = filled(FloodFill.fill(pixels, w, h, 40, 50, red))
+        assertTrue(fill.covers(40, 50))
+        assertTrue("the arm's far end", fill.covers(138, 50))
+        assertFalse(fill.covers(150, 50))
+    }
 }

@@ -29,6 +29,12 @@ object DrawingFile {
     /** Far more than anyone draws; a count above this means the file is damaged. */
     private const val MAX_COUNT = 1_000_000
 
+    /**
+     * The most runs a fill can have: every other pixel on every row. Any real fill fits,
+     * so a fill that saves always reopens.
+     */
+    const val MAX_RUNS = PAPER_HEIGHT * ((PAPER_WIDTH + 1) / 2)
+
     fun write(history: Drawing.History, output: OutputStream) {
         val out = DataOutputStream(output.buffered())
         out.writeInt(MAGIC)
@@ -68,6 +74,7 @@ object DrawingFile {
                         }
                     }
                     is Fill -> {
+                        require(mark.runs <= MAX_RUNS) { "A fill can't have more than $MAX_RUNS runs" }
                         out.writeByte(FILL.toInt())
                         out.writeInt(mark.color)
                         out.writeBoolean(mark.behind)
@@ -102,7 +109,9 @@ object DrawingFile {
     private fun readFill(data: DataInputStream): Fill {
         val color = data.readInt()
         val behind = data.readBoolean()
-        val spans = IntArray(3 * readCount(data, allowZero = false))
+        val runs = data.readInt()
+        if (runs !in 1..MAX_RUNS) throw IOException("Bad run count $runs")
+        val spans = IntArray(3 * runs)
         for (i in spans.indices step 3) {
             val y = data.readInt()
             val first = data.readInt()

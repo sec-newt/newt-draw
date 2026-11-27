@@ -158,8 +158,9 @@ class DrawingStoreTest {
         val bytes = ByteArrayOutputStream().also {
             DrawingFile.write(Drawing().apply { add(line(100f)) }.history(), it)
         }.toByteArray()
-        // The first point's x is right after: magic, format, version, count, type, width, eraser, points.
-        val firstX = 4 + 4 + 8 + 4 + 1 + 4 + 1 + 4
+        // The first point's x is right after: magic, format, version, count, type, width,
+        // eraser, color, point count.
+        val firstX = 4 + 4 + 8 + 4 + 1 + 4 + 1 + 4 + 4
         java.nio.ByteBuffer.wrap(bytes).putFloat(firstX, Float.NaN)
         File(folder.root, "drawing.ndrw").writeBytes(bytes)
         assertTrue(DrawingStore(folder.root).load() is DrawingStore.Loaded.Damaged)
@@ -243,5 +244,20 @@ class DrawingStoreTest {
         java.nio.ByteBuffer.wrap(bytes).putInt(bytes.size - 8, 99_999)
         File(folder.root, "drawing.ndrw").writeBytes(bytes)
         assertTrue(DrawingStore(folder.root).load() is DrawingStore.Loaded.Damaged)
+    }
+
+    @Test
+    fun aFillWithMoreThanAMillionRunsSavesAndReopens() {
+        // 400 runs on each of 3000 rows: 1.2 million, past the general count limit.
+        val spans = IntArray(3 * 400 * 3000)
+        var i = 0
+        for (y in 0 until 3000) for (r in 0 until 400) {
+            spans[i++] = y
+            spans[i++] = r * 7
+            spans[i++] = r * 7 + 3
+        }
+        val drawing = Drawing().apply { add(Fill(spans, Palette.Red.argb, behind = true)) }
+        assertEquals(DrawingStore.Saved.Written, DrawingStore(folder.root).save(drawing.history()))
+        assertEquals(1_200_000, (found(DrawingStore(folder.root)).strokes.single() as Fill).runs)
     }
 }

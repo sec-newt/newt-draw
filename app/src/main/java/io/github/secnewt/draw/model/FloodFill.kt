@@ -10,7 +10,8 @@ package io.github.secnewt.draw.model
  *    gap, the lines are first thickened by [GAP] pixels on each side, which closes gaps up
  *    to twice that wide, and the area is found inside the thickened lines.
  * 3. Then the area grows back out by the same amount (never through a line), so it
- *    reaches the real lines.
+ *    reaches the real lines, and narrow parts that are closed off (a thin arm or tail) are
+ *    added back. A tap right next to a line starts from the nearest wide-open spot.
  *
  * Filling empty paper goes *behind* the ink, one pixel under the lines too, so the lines
  * stay crisp on top with no white edge between line and fill.
@@ -50,13 +51,103 @@ object FloodFill {
         } else {
             open
         }
-        val gapClosing = gap > 0 && core[y * width + x]
         val inside = BooleanArray(n)
-        scanlineFill(if (gapClosing) core else open, inside, width, height, x, y)
-        if (gapClosing) growWithin(inside, open, width, height, steps = gap + 1)
+        // Tapped close to a line, the tap itself is in the thickened lines: start from the
+        // nearest wide-open spot instead, so gap protection still applies.
+        val start = if (gap > 0) nearestCore(core, open, width, height, y * width + x, steps = gap + 1) else -1
+        if (start >= 0) {
+            scanlineFill(core, inside, width, height, start % width, start / width)
+            addClosedNarrowParts(inside, core, open, width, height)
+            growWithin(inside, open, width, height, steps = gap + 1)
+        } else {
+            // No wide-open spot nearby: a small area, filled as it is.
+            scanlineFill(open, inside, width, height, x, y)
+        }
         if (onEmpty) growWithin(inside, BooleanArray(n) { true }, width, height, steps = 1)
         return Result.Filled(Fill(spans(inside, width, height), color, behind = onEmpty))
     }
+
+    /**
+     * The nearest [core] pixel to [from], at most [steps] moves away through [open] pixels,
+     * or -1 if there isn't one.
+     */
+    private fun nearestCore(core: BooleanArray, open: BooleanArray, width: Int, height: Int, from: Int, steps: Int): Int {
+        if (core[from]) return from
+        val seen = HashSet<Int>()
+        var frontier = listOf(from)
+        seen.add(from)
+        repeat(steps) {
+            val next = ArrayList<Int>()
+            for (i in frontier) {
+                val x = i % width
+                val y = i / width
+                for ((dx, dy) in FOUR) {
+                    val nx = x + dx
+                    val ny = y + dy
+                    if (nx !in 0 until width || ny !in 0 until height) continue
+                    val j = ny * width + nx
+                    if (!open[j] || !seen.add(j)) continue
+                    if (core[j]) return j
+                    next.add(j)
+                }
+            }
+            frontier = next
+        }
+        return -1
+    }
+
+    /**
+     * Thickening the lines also shuts off narrow parts of the shape (a thin arm or tail),
+     * not just gaps. A narrow part is added back if it's closed off: it touches the tapped
+     * area's wide-open middle and no other. One that reaches another wide-open area (through
+     * a gap to the outside, say) stays out, so gaps still don't leak.
+     */
+    private fun addClosedNarrowParts(inside: BooleanArray, core: BooleanArray, open: BooleanArray, width: Int, height: Int) {
+        val n = width * height
+        val visited = BooleanArray(n)
+        val part = IntStack()
+        val queue = IntStack()
+        for (i in 0 until n) {
+            if (!inside[i]) continue
+            val x = i % width
+            val y = i / width
+            for ((dx, dy) in FOUR) {
+                val nx = x + dx
+                val ny = y + dy
+                if (nx !in 0 until width || ny !in 0 until height) continue
+                val j = ny * width + nx
+                if (!open[j] || core[j] || visited[j]) continue
+                // Collect this narrow part and see what wide areas it touches.
+                part.clear()
+                queue.clear()
+                visited[j] = true
+                queue.push(j)
+                var reachesElsewhere = false
+                while (queue.isNotEmpty()) {
+                    val k = queue.pop()
+                    part.push(k)
+                    val kx = k % width
+                    val ky = k / width
+                    for ((ex, ey) in FOUR) {
+                        val mx = kx + ex
+                        val my = ky + ey
+                        if (mx !in 0 until width || my !in 0 until height) continue
+                        val m = my * width + mx
+                        if (!open[m]) continue
+                        if (core[m]) {
+                            if (!inside[m]) reachesElsewhere = true
+                        } else if (!visited[m]) {
+                            visited[m] = true
+                            queue.push(m)
+                        }
+                    }
+                }
+                if (!reachesElsewhere) part.forEach { inside[it] = true }
+            }
+        }
+    }
+
+    private val FOUR = listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1)
 
     private fun alpha(c: Int) = c ushr 24
 
@@ -182,8 +273,10 @@ object FloodFill {
 
     /** A growable stack of ints, without boxing. */
     private class IntStack {
-        private var items = IntArray(1024)
-        private var size = 0
+        var items = IntArray(1024)
+            private set
+        var size = 0
+            private set
 
         fun push(v: Int) {
             if (size == items.size) items = items.copyOf(size * 2)
@@ -195,5 +288,13 @@ object FloodFill {
         fun isNotEmpty() = size > 0
 
         fun toArray() = items.copyOf(size)
+
+        fun clear() {
+            size = 0
+        }
+
+        inline fun forEach(action: (Int) -> Unit) {
+            for (i in 0 until size) action(items[i])
+        }
     }
 }
