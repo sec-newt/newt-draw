@@ -5,11 +5,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -57,7 +57,7 @@ private const val HELLO = "One finger draws. Two fingers drag to scroll and pinc
 /** A message for the status line. Each new one is shown, even if the words are the same. */
 class StatusAlert(val text: String)
 
-private enum class Dialog { Size, Smoothing, Clear }
+private enum class Dialog { More, Size, Smoothing, Clear }
 
 /** "Zoom 300%." — relative to the whole page fitting on screen. */
 private fun zoomText(view: PaperView, limits: PaperView.Limits) = "Zoom ${view.percentOf(PaperView.fit(limits))}%."
@@ -166,8 +166,9 @@ fun DrawScreen(
             )
             // The paper is white in light mode too, so a line marks where it ends.
             HorizontalDivider(thickness = 2.dp, color = MaterialTheme.colorScheme.primary)
-            // The tools never take more than half the screen, so the paper always has room.
-            // With very large text they scroll instead.
+            // Only what you reach for while drawing stays on screen: the tool, Undo and Redo.
+            // Everything else is under More, so the paper gets most of the screen.
+            // With very large text the tools scroll rather than take more than half.
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -182,46 +183,23 @@ fun DrawScreen(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 )
-                // Buttons wrap onto more rows rather than scrolling, so none hide off screen.
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    itemVerticalAlignment = Alignment.CenterVertically,
-                ) {
-                    onDrawings?.let { NewtButton("Drawings", onClick = it) }
-                    NewtButton("Undo", onClick = {
+                NewtChoice(
+                    options = Tool.entries,
+                    selected = tool,
+                    label = { it.label },
+                    onSelect = { tool = it },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NewtButton("Undo", modifier = Modifier.weight(1f), onClick = {
                         status = if (drawing.undo()) "Undone. ${onPage(drawing.strokes.size)}" else "Nothing to undo."
                         refresh()
                     })
-                    NewtButton("Redo", onClick = {
+                    NewtButton("Redo", modifier = Modifier.weight(1f), onClick = {
                         status = if (drawing.redo()) "Redone. ${onPage(drawing.strokes.size)}" else "Nothing to redo."
                         refresh()
                     })
-                    NewtChoice(
-                        options = Tool.entries,
-                        selected = tool,
-                        label = { it.label },
-                        onSelect = { tool = it },
-                        modifier = Modifier.widthIn(min = 196.dp),
-                    )
-                    NewtButton("Size: ${size.label}", onClick = { dialog = Dialog.Size })
-                    NewtButton("Smooth: ${smoothing.label}", onClick = { dialog = Dialog.Smoothing })
-                    NewtButton("Zoom in", onClick = {
-                        val l = limits ?: return@NewtButton
-                        view = view?.zoomedAtCentre(2f, l)?.also { status = zoomText(it, l) }
-                    })
-                    NewtButton("Zoom out", onClick = {
-                        val l = limits ?: return@NewtButton
-                        view = view?.zoomedAtCentre(0.5f, l)?.also { status = zoomText(it, l) }
-                    })
-                    NewtButton("Whole page", onClick = {
-                        limits?.let { view = PaperView.fit(it) }
-                        status = "Showing the whole page."
-                    })
-                    NewtButton("Save", onClick = ::save)
-                    NewtButton("Clear", onClick = {
-                        if (strokes.isEmpty()) status = "The paper is already blank." else dialog = Dialog.Clear
-                    })
+                    NewtButton("More", modifier = Modifier.weight(1f), onClick = { dialog = Dialog.More })
                 }
             }
         }
@@ -260,6 +238,51 @@ fun DrawScreen(
             },
             dismissButton = { NewtButton("Keep drawing", onClick = { dialog = null }) },
         )
+        Dialog.More -> {
+            /** Closes More, then does [action]. */
+            fun then(action: () -> Unit): () -> Unit = {
+                dialog = null
+                action()
+            }
+            AlertDialog(
+                onDismissRequest = { dialog = null },
+                title = { Text("More") },
+                text = {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            NewtButton("Size: ${size.label}", onClick = { dialog = Dialog.Size })
+                            NewtButton("Smooth: ${smoothing.label}", onClick = { dialog = Dialog.Smoothing })
+                            NewtButton("Zoom in", onClick = then {
+                                val l = limits ?: return@then
+                                view = view?.zoomedAtCentre(2f, l)?.also { status = zoomText(it, l) }
+                            })
+                            NewtButton("Zoom out", onClick = then {
+                                val l = limits ?: return@then
+                                view = view?.zoomedAtCentre(0.5f, l)?.also { status = zoomText(it, l) }
+                            })
+                            NewtButton("Whole page", onClick = then {
+                                limits?.let { view = PaperView.fit(it) }
+                                status = "Showing the whole page."
+                            })
+                            onDrawings?.let { NewtButton("Drawings", onClick = then(it)) }
+                            NewtButton("Save", onClick = then(::save))
+                            NewtButton("Clear", onClick = {
+                                if (strokes.isEmpty()) {
+                                    status = "The paper is already blank."
+                                    dialog = null
+                                } else {
+                                    dialog = Dialog.Clear
+                                }
+                            })
+                        }
+                    }
+                },
+                confirmButton = { NewtButton("Close", onClick = { dialog = null }) },
+            )
+        }
         null -> Unit
     }
 }

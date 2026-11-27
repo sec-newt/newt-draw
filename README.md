@@ -9,6 +9,10 @@ no internet, no permissions.
 
 ## Using it
 
+The paper gets most of the screen. Under it are **Pen / Eraser / Move**, then
+**Undo**, **Redo** and **More**. More holds everything else: Size, Smooth, Zoom in,
+Zoom out, Whole page, Drawings, Save and Clear.
+
 - **Draw** with one finger on the white paper.
 - **Move and zoom the paper.** The paper is a big square (3000 x 3000), larger
   than the screen. Drag with two fingers to scroll, pinch to zoom in for fine details,

@@ -19,6 +19,7 @@ import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
@@ -63,6 +64,12 @@ class DrawScreenTest {
     }
 
     private fun show(drawing: Drawing) = composeRule.setContent { NewtTheme(darkTheme = true) { DrawScreen(drawing) } }
+
+    /** Opens More and taps [button] in it. */
+    private fun more(button: String) {
+        composeRule.onNodeWithText("More").performClick()
+        composeRule.onNode(hasText(button) and hasAnyAncestor(isDialog())).performClick()
+    }
 
     private val paper get() = composeRule.onNodeWithContentDescription("Drawing paper")
 
@@ -166,7 +173,7 @@ class DrawScreenTest {
         swipeAcross()
         val whole = drawing.lastSpan()
         pinchOut()
-        composeRule.onNodeWithText("Whole page").performClick()
+        more("Whole page")
         swipeAcross()
         assertEquals(whole, drawing.lastSpan(), whole * 0.05f)
     }
@@ -177,7 +184,7 @@ class DrawScreenTest {
         show(drawing)
         swipeAcross()
         val whole = drawing.lastSpan()
-        composeRule.onNodeWithText("Zoom in").performClick()
+        more("Zoom in")
         composeRule.onNodeWithText("Zoom 200%.").assertExists()
         // Undo changes the status text, which changes the paper's height: zoom must stay.
         composeRule.onNodeWithText("Undo").performClick()
@@ -189,7 +196,7 @@ class DrawScreenTest {
     fun theMoveToolDragsWithOneFingerAndDrawsNothing() {
         val drawing = Drawing()
         show(drawing)
-        composeRule.onNodeWithText("Zoom in").performClick()
+        more("Zoom in")
         composeRule.onNodeWithText("Move").performClick()
         swipeAcross()
         paper.assert(hasStrokes("Blank"))
@@ -274,7 +281,7 @@ class DrawScreenTest {
         val drawing = Drawing()
         show(drawing)
         swipeAcross()
-        composeRule.onNodeWithText("Clear").performClick()
+        more("Clear")
         composeRule.onNodeWithText("Clear the paper?").assertExists()
         composeRule.onNode(hasText("Clear") and hasAnyAncestor(isDialog())).performClick()
         paper.assert(hasStrokes("Blank"))
@@ -285,15 +292,16 @@ class DrawScreenTest {
     @Test
     fun savingBlankPaperSaysSo() {
         show(Drawing())
-        composeRule.onNodeWithText("Save").performClick()
+        more("Save")
         composeRule.onNodeWithText("Nothing to save yet. The paper is blank.").assertExists()
     }
 
     @Test
     fun smoothingCanBeChanged() {
         show(Drawing())
-        composeRule.onNodeWithText("Smooth: Medium").performClick()
+        more("Smooth: Medium")
         composeRule.onNodeWithText("High").performClick()
+        composeRule.onNodeWithText("More").performClick()
         composeRule.onNodeWithText("Smooth: High").assertExists()
     }
 
@@ -309,7 +317,7 @@ class DrawScreenTest {
         var changes = 0
         composeRule.setContent { NewtTheme { DrawScreen(Drawing(), onChange = { changes++ }) } }
         composeRule.onNodeWithText("Undo").performClick() // nothing to undo
-        composeRule.onNodeWithText("Zoom in").performClick()
+        more("Zoom in")
         assertEquals(0, changes)
         swipeAcross()
         composeRule.runOnIdle { assertEquals(1, changes) }
@@ -335,7 +343,18 @@ class DrawScreenTest {
     fun theDrawingsButtonOpensTheList() {
         var asked = 0
         composeRule.setContent { NewtTheme { DrawScreen(Drawing(), onDrawings = { asked++ }) } }
-        composeRule.onNodeWithText("Drawings").performClick()
+        more("Drawings")
         assertEquals(1, asked)
+    }
+
+    @Test
+    fun moreClosesAndTheToolsLeaveMostOfTheScreenForThePaper() {
+        show(Drawing())
+        more("Zoom in")
+        composeRule.onNodeWithText("Zoom 200%.").assertExists()
+        composeRule.onNodeWithText("Close").assertDoesNotExist()
+        val screen = composeRule.onRoot().fetchSemanticsNode().size.height
+        val paperHeight = paper.fetchSemanticsNode().size.height
+        assertTrue("the paper gets $paperHeight of $screen pixels", paperHeight > screen * 0.7f)
     }
 }
