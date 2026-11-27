@@ -133,4 +133,16 @@ class FloodFillTest {
         assertTrue("the arm's far end", fill.covers(138, 50))
         assertFalse(fill.covers(150, 50))
     }
+
+    @Test
+    fun theFillDoesNotSlipThroughACornerIntoAnotherArea() {
+        // The closed arm's end touches a separate area only corner to corner.
+        val pixels = IntArray(w * h) { black }
+        for (y in 10..89) for (x in 10..69) pixels[y * w + x] = 0
+        for (y in 45..54) for (x in 70..139) pixels[y * w + x] = 0
+        for (y in 55..199) for (x in 140..199) pixels[y * w + x] = 0
+        val fill = filled(FloodFill.fill(pixels, w, h, 40, 50, red))
+        assertTrue(fill.covers(138, 50))
+        assertFalse("the separate area", fill.covers(145, 60))
+    }
 }

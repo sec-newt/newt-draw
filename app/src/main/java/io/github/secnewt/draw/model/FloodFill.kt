@@ -218,7 +218,10 @@ object FloodFill {
         }
     }
 
-    /** Grows [inside] by up to [steps] pixels (8 directions) into [open] pixels only. */
+    /**
+     * Grows [inside] by up to [steps] pixels (8 directions) into [open] pixels only. Diagonal
+     * steps need an open pixel beside them, so growth never squeezes through a corner.
+     */
     private fun growWithin(inside: BooleanArray, open: BooleanArray, width: Int, height: Int, steps: Int) {
         var frontier = IntStack()
         for (i in inside.indices) {
@@ -242,10 +245,12 @@ object FloodFill {
                     val ny = y + dy
                     if (nx !in 0 until width || ny !in 0 until height) continue
                     val j = ny * width + nx
-                    if (!inside[j] && open[j]) {
-                        inside[j] = true
-                        next.push(j)
-                    }
+                    if (inside[j] || !open[j]) continue
+                    // A diagonal step needs an open pixel beside it, so the fill can't slip
+                    // between two pixels that only touch at a corner.
+                    if (dx != 0 && dy != 0 && !open[y * width + nx] && !open[ny * width + x]) continue
+                    inside[j] = true
+                    next.push(j)
                 }
             }
             frontier = next
